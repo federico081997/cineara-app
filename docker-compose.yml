@@ -1,0 +1,102 @@
+name: cineara
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${CINEARA_POSTGRES_DATABASE:-cineara}
+      POSTGRES_USER: ${CINEARA_POSTGRES_USER:-cineara}
+      POSTGRES_PASSWORD: ${CINEARA_POSTGRES_PASSWORD:-cineara_dev_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${CINEARA_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - cineara_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready
+          -U ${CINEARA_POSTGRES_USER:-cineara}
+          -d ${CINEARA_POSTGRES_DATABASE:-cineara}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "60"
+      - "1"
+      - --loglevel
+      - warning
+    ports:
+      - "${CINEARA_REDIS_PORT:-6379}:6379"
+    volumes:
+      - cineara_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      # Container service names replace localhost inside the Compose network.
+      CINEARA_API_HOST: 0.0.0.0
+      CINEARA_API_PORT: 8000
+      CINEARA_POSTGRES_HOST: postgres
+      CINEARA_POSTGRES_PORT: 5432
+      CINEARA_REDIS_HOST: redis
+      CINEARA_REDIS_PORT: 6379
+    command:
+      - uvicorn
+      - cineara.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/src
+    ports:
+      - "${CINEARA_API_PORT:-8000}:8000"
+    volumes:
+      # Development-only source mount for Uvicorn automatic reload.
+      - ./backend/src:/app/src:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    init: true
+    restart: unless-stopped
+
+volumes:
+  cineara_postgres_data:
+  cineara_redis_data:

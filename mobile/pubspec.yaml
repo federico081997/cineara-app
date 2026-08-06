@@ -1,6 +1,7 @@
 name: cineara_mobile
-description: "A new Flutter project."
-publish_to: 'none'
+description: "The Cineara mobile application for discovering, tracking, and organising movies, TV series, anime, and international media."
+publish_to: "none"
+
 version: 0.1.0+1
 
 environment:
@@ -10,14 +11,22 @@ dependencies:
   flutter:
     sdk: flutter
 
+  localization:
+    sdk: flutter
+
+  intl: any
+
+  go_router: ^17.4.0
+
   cineara_design_system:
     path: ../packages/cineara_design_system
-
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true
+  generate: true

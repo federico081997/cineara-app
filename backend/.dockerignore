@@ -1,8 +1,30 @@
+# Python environments and caches
 .venv/
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-tests/
+.coverage
+htmlcov/
+
+# Local configuration and secrets
 .env
-*.pyc
+.env.*
+!.env.example
+
+# Version-control and IDE files
+.git/
+.github/
+.idea/
+.vscode/
+
+# Build and package output
+build/
+dist/
+*.egg-info/
+
+# Files not required by the runtime image
+tests/
+alembic/
+*.log

@@ -6,7 +6,7 @@ import asyncio
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 EnvironmentName = Literal["development", "staging", "production", "test"]
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     postgres_port: int = Field(default=5432, ge=1, le=65535)
     postgres_database: str = "cineara"
     postgres_user: str = "cineara"
-    postgres_password: str = "cineara_dev_password"
+    postgres_password: SecretStr = SecretStr("cineara_dev_password")
 
     redis_host: str = "localhost"
     redis_port: int = Field(default=6379, ge=1, le=65535)
@@ -61,13 +61,25 @@ def get_settings() -> Settings:
     return Settings()
 
 
-async def _check_tcp_service(host: str, port: int, timeout: float) -> bool:
-    """Return whether a TCP connection can be opened within ``timeout``."""
+async def _check_tcp_service(
+    host: str, port: int, timeout_seconds: float
+) -> bool:
+    """Check whether a TCP service is reachable within a timeout.
+
+    Args:
+        host: Hostname or IP address of the TCP service.
+        port: TCP port number to connect to.
+        timeout_seconds: Maximum number of seconds to wait for the connection.
+
+    Returns:
+        ``True`` if the connection is opened successfully; otherwise,
+            ``False``.
+    """
     writer: asyncio.StreamWriter | None = None
     try:
         _, writer = await asyncio.wait_for(
             asyncio.open_connection(host=host, port=port),
-            timeout=timeout,
+            timeout=timeout_seconds,
         )
         return True
     except (OSError, TimeoutError):
@@ -78,20 +90,39 @@ async def _check_tcp_service(host: str, port: int, timeout: float) -> bool:
             await writer.wait_closed()
 
 
-async def _check_redis(host: str, port: int, timeout: float) -> bool:
-    """Issue a Redis RESP ``PING`` and require a ``PONG`` response."""
+async def _check_redis(
+    host: str,
+    port: int,
+    timeout_seconds: float,
+) -> bool:
+    """Send a Redis PING command and require a PONG response.
+
+    Args:
+        host: Redis server hostname or IP address.
+        port: Redis server TCP port.
+        timeout_seconds: Maximum number of seconds allowed for the check.
+
+    Returns:
+        ``True`` if Redis returns ``PONG``; otherwise, ``False``.
+    """
     writer: asyncio.StreamWriter | None = None
+
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host=host, port=port),
-            timeout=timeout,
-        )
-        writer.write(b"*1\r\n$4\r\nPING\r\n")
-        await asyncio.wait_for(writer.drain(), timeout=timeout)
-        response = await asyncio.wait_for(reader.readline(), timeout=timeout)
+        async with asyncio.timeout(timeout_seconds):
+            reader, connection_writer = await asyncio.open_connection(
+                host=host,
+                port=port,
+            )
+            writer = connection_writer
+            connection_writer.write(b"*1\r\n$4\r\nPING\r\n")
+            await connection_writer.drain()
+            response = await reader.readline()
+
         return response == b"+PONG\r\n"
+
     except (OSError, TimeoutError):
         return False
+
     finally:
         if writer is not None:
             writer.close()
