@@ -11,9 +11,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  localization:
-    sdk: flutter
-
   intl: any
 
   go_router: ^17.4.0
