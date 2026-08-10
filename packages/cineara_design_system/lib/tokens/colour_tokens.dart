@@ -123,4 +123,38 @@ abstract final class CinearaColours {
   static const Color warning = Color(0xFFF4B84A);
   static const Color error = Color(0xFFF06472);
   static const Color information = Color(0xFF5681F5);
+
+  // ---------------------------------------------------------------------------
+  // Status icon colours
+  // ---------------------------------------------------------------------------
+
+  /// Watching / currently in progress.
+  static const Color statusWatching = Color(0xFF66D9FF);
+
+  /// All currently available episodes have been watched.
+  static const Color statusCaughtUp = Color(0xFF64E6B0);
+
+  /// Media has been fully completed.
+  static const Color statusCompleted = Color(0xFF9BE564);
+
+  /// Media is currently being rewatched.
+  static const Color statusRewatching = Color(0xFFC58AFF);
+
+  /// Media has temporarily been put on hold.
+  static const Color statusOnHold = Color(0xFFFF9F43);
+
+  /// Media has been dropped.
+  static const Color statusDropped = Color(0xFFFF6B7A);
+
+  /// Media is saved to the watchlist.
+  static const Color statusWatchlist = Color(0xFF6EA8FF);
+
+  /// Media is marked as a favourite.
+  static const Color statusFavourite = Color(0xFFFF70B7);
+
+  /// Media belongs to one or more collections.
+  static const Color statusCollection = Color(0xFF57DDD1);
+
+  /// Accent used for the user's personal rating.
+  static const Color userRating = Color(0xFFFFD166);
 }

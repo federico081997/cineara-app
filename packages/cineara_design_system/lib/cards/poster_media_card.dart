@@ -1,11 +1,8 @@
+import 'package:cineara_design_system/cineara_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../themes/theme_extensions.dart';
-import '../tokens/colour_tokens.dart';
-import '../tokens/motion_tokens.dart';
-import '../tokens/radius_tokens.dart';
-import '../tokens/spacing_tokens.dart';
 
 /// Controls how a poster media card is displayed.
 enum PosterMediaCardLayout {
@@ -56,6 +53,53 @@ enum PosterQuickActionType {
 
   /// Mark or unmark the media as watched.
   watched,
+}
+
+/// Status information already communicated by the surrounding UI.
+///
+/// The poster card can suppress this information to avoid redundant icons.
+enum PosterStatusContext {
+  /// No status is already communicated by the surrounding UI.
+  none,
+
+  /// The current viewing status is already clear from the surrounding UI.
+  viewingStatus,
+
+  /// The surrounding UI already indicates that the media is a favourite.
+  favourite,
+
+  /// The surrounding UI already indicates that the media is in the watchlist.
+  watchlist,
+
+  /// The surrounding UI already indicates that the media is in a collection.
+  collection,
+}
+
+/// Type of newly available content associated with the media.
+enum PosterNewContentType {
+  /// A newly released movie, series, season, or other media item.
+  release,
+
+  /// One or more newly available episodes of an episodic title.
+  episodes,
+}
+
+/// Newly available content associated with a poster media card.
+@immutable
+class PosterNewContent {
+  const PosterNewContent({required this.type, this.count})
+    : assert(
+        (type == PosterNewContentType.release && count == null) ||
+            (type == PosterNewContentType.episodes &&
+                count != null &&
+                count > 0),
+      );
+
+  /// Type of newly available content.
+  final PosterNewContentType type;
+
+  /// Number of new episodes when [type] is [PosterNewContentType.episodes].
+  final int? count;
 }
 
 /// World-cinema identity displayed by Cineara's Compass.
@@ -151,46 +195,76 @@ class PosterQuickAction {
   final String? semanticLabel;
 }
 
+@immutable
 class PosterMediaCardLabels {
-  /// Defines the localized labels used by the poster media card.
   const PosterMediaCardLabels({
-    this.notStarted = 'Not started',
-    this.watching = 'Watching',
-    this.caughtUp = 'Caught up',
-    this.completed = 'Completed',
-    this.rewatching = 'Rewatching',
-    this.onHold = 'On hold',
-    this.dropped = 'Dropped',
-    this.newEpisodes = 'NEW',
-    this.favorite = 'Favorite',
+    required this.notStarted,
+    required this.watching,
+    required this.caughtUp,
+    required this.completed,
+    required this.rewatching,
+    required this.onHold,
+    required this.dropped,
+    required this.favourite,
+    required this.watchlist,
+    required this.userRating,
+    required this.collectionCount,
+    required this.progress,
+    required this.newContent,
+    required this.newContentDescription,
+    required this.quickAction,
   });
 
-  /// Label for media that was not started to watch.
+  /// Label for media that has not been started.
   final String notStarted;
 
   /// Label for media currently being watched.
   final String watching;
 
-  /// label for media where all available episodes are watched.
+  /// Label for media with all available episodes watched.
   final String caughtUp;
 
-  /// Label for completed media.
+  /// Label for fully completed media.
   final String completed;
 
-  /// Label for media being watched again.
+  /// Label for media currently being rewatched.
   final String rewatching;
 
-  /// Label for media temporarily paused by the user.
+  /// Label for media temporarily put on hold.
   final String onHold;
 
-  /// Label for media the user stopped watching.
+  /// Label for media the user has stopped watching.
   final String dropped;
 
-  /// Label shown for media the user has hearted.
-  final String favorite;
+  /// Label indicating that the media is a favourite.
+  final String favourite;
 
-  /// Label shown when new episodes are available.
-  final String newEpisodes;
+  /// Label indicating that the media is in the watchlist.
+  final String watchlist;
+
+  /// Builds the localized label for the user's rating.
+  final String Function(String rating) userRating;
+
+  /// Builds the localized collection-membership label.
+  final String Function(int count) collectionCount;
+
+  /// Builds the localized viewing-progress label.
+  final String Function(int percentage) progress;
+
+  /// Short visual label for newly available content.
+  final String newContent;
+
+  /// Builds the localized description for newly available content.
+  final String Function(PosterNewContentType type, int? count)
+  newContentDescription;
+
+  /// Builds the localized semantic label for a quick action.
+  final String Function(
+    PosterQuickActionType type,
+    bool isActive,
+    String mediaTitle,
+  )
+  quickAction;
 }
 
 /// Reusable poster-style media card used throughout Cineara.
@@ -201,8 +275,8 @@ class PosterMediaCardLabels {
 /// - external ratings;
 /// - the user's personal rating;
 /// - viewing status;
-/// - favorite and collection relationships;
-/// - new-episode availability;
+/// - favourite and collection relationships;
+/// - newly available content;
 /// - quick actions;
 /// - progress.
 ///
@@ -217,6 +291,7 @@ class PosterMediaCardLabels {
 /// PosterMediaCard(
 ///   title: 'Frieren: Beyond Journey\'s End',
 ///   mediaTypeLabel: 'TV Series',
+///   labels: posterLabels,
 ///   subtitle: 'S2 E7 · Japan',
 ///   imageUrl: posterUrl,
 ///   worldIdentity: const PosterWorldIdentity(
@@ -231,7 +306,10 @@ class PosterMediaCardLabels {
 ///   userRating: '9.5',
 ///   viewingStatus: PosterViewingStatus.watching,
 ///   progress: 0.62,
-///   newEpisodeCount: 2,
+///   newContent: const PosterNewContent(
+///     type: PosterNewContentType.episodes,
+///     count: 2,
+///   ),
 ///   isFavourite: true,
 ///   collectionCount: 2,
 ///   quickAction: PosterQuickAction(
@@ -241,7 +319,6 @@ class PosterMediaCardLabels {
 ///   ),
 ///   onTap: () {},
 ///   onLongPress: () {},
-///   onWorldIdentityTap: () {},
 /// )
 /// ```
 class PosterMediaCard extends StatefulWidget {
@@ -249,25 +326,27 @@ class PosterMediaCard extends StatefulWidget {
   const PosterMediaCard({
     required this.title,
     required this.mediaTypeLabel,
+    required this.labels,
     super.key,
     this.imageUrl,
     this.subtitle,
+    this.secondarySubtitle,
     this.worldIdentity,
     this.externalRating,
     this.userRating,
+    this.statusContext = PosterStatusContext.none,
     this.viewingStatus = PosterViewingStatus.notStarted,
     this.isFavourite = false,
+    this.isInWatchlist = false,
     this.collectionCount = 0,
     this.quickAction,
     this.progress,
-    this.newEpisodeCount = 0,
-    this.labels = const PosterMediaCardLabels(),
-    this.newEpisodesSemanticLabel,
+    this.newContent,
+    this.newContentSemanticLabel,
     this.collectionSemanticLabel,
+    this.progressSemanticLabel,
     this.onTap,
     this.onLongPress,
-    this.onWorldIdentityTap,
-    this.onUserRatingTap,
     this.semanticLabel,
     this.aspectRatio = 2 / 3,
     this.maxTitleLines = 2,
@@ -276,13 +355,11 @@ class PosterMediaCard extends StatefulWidget {
     this.showExternalRating = true,
     this.showUserRating = true,
     this.showStatusDock = true,
-    this.showWorldline = true,
-    this.showNewEpisodes = true,
+    this.showNewContent = true,
     this.enableHaptics = true,
   }) : assert(aspectRatio > 0),
        assert(maxTitleLines > 0),
-       assert(collectionCount >= 0),
-       assert(newEpisodeCount >= 0);
+       assert(collectionCount >= 0);
 
   /// Primary media title.
   final String title;
@@ -310,6 +387,16 @@ class PosterMediaCard extends StatefulWidget {
   /// - `Caught up`
   final String? subtitle;
 
+  /// Optional second supporting metadata line.
+  ///
+  /// This should contain lower-priority contextual information than [subtitle].
+  ///
+  /// Examples:
+  /// - `South Korea · Thriller`
+  /// - `Today · 21:00`
+  /// - `2023 · Japan`
+  final String? secondarySubtitle;
+
   /// Optional Cineara world-cinema identity.
   final PosterWorldIdentity? worldIdentity;
 
@@ -317,15 +404,19 @@ class PosterMediaCard extends StatefulWidget {
   final PosterExternalRating? externalRating;
 
   /// Rating personally assigned by the current user.
-  ///
-  /// This is deliberately displayed separately from [externalRating].
   final String? userRating;
+
+  /// Status information already communicated by the surrounding UI.
+  final PosterStatusContext statusContext;
 
   /// Current viewing status.
   final PosterViewingStatus viewingStatus;
 
   /// Whether the title is a favourite.
   final bool isFavourite;
+
+  /// Whether the title is in the watchlist.
+  final bool isInWatchlist;
 
   /// Number of user collections containing this media.
   final int collectionCount;
@@ -336,35 +427,26 @@ class PosterMediaCard extends StatefulWidget {
   /// Viewing progress between `0.0` and `1.0`.
   final double? progress;
 
-  /// Number of newly available episodes the user has not yet watched.
-  ///
-  /// The NEW marker is only rendered for media that the user has already
-  /// started. The feature layer should only provide this value for episodic
-  /// media.
-  final int newEpisodeCount;
+  /// Newly available content associated with the media.
+  final PosterNewContent? newContent;
 
   /// Localized labels used by the card.
-  ///
-  /// Defaults to English labels when no localized values are supplied.
   final PosterMediaCardLabels labels;
 
-  /// Optional accessibility description for the new-episode marker.
-  final String? newEpisodesSemanticLabel;
+  /// Optional accessibility description for newly available content.
+  final String? newContentSemanticLabel;
 
-  /// Optional localized accessibility description for collection membership.
+  /// Optional accessibility description for collection membership.
   final String? collectionSemanticLabel;
+
+  /// Optional accessibility description for the progress bar.
+  final String? progressSemanticLabel;
 
   /// Opens the media detail screen.
   final VoidCallback? onTap;
 
   /// Opens the complete state-aware action sheet.
   final VoidCallback? onLongPress;
-
-  /// Opens Cineara's World Lens.
-  final VoidCallback? onWorldIdentityTap;
-
-  /// Allows the personal rating to be edited where appropriate.
-  final VoidCallback? onUserRatingTap;
 
   /// Optional accessibility description for the complete card.
   final String? semanticLabel;
@@ -390,11 +472,8 @@ class PosterMediaCard extends StatefulWidget {
   /// Whether the passive personal-state dock is shown.
   final bool showStatusDock;
 
-  /// Whether the subtle Cineara Worldline appears when progress is absent.
-  final bool showWorldline;
-
-  /// Whether the NEW episode marker is shown.
-  final bool showNewEpisodes;
+  /// Whether the NEW content marker is shown.
+  final bool showNewContent;
 
   /// Whether interaction haptics are enabled.
   final bool enableHaptics;
@@ -404,24 +483,37 @@ class PosterMediaCard extends StatefulWidget {
 }
 
 class _PosterMediaCardState extends State<PosterMediaCard> {
+  static const Duration _minimumPressDuration = Duration(milliseconds: 90);
+
   bool _isPressed = false;
 
-  bool get _isInteractive => widget.onTap != null || widget.onLongPress != null;
+  DateTime? _pressStartedAt;
 
-  bool get _hasNewEpisodes {
-    if (!widget.showNewEpisodes || widget.newEpisodeCount <= 0) {
+  bool get _isTappable => widget.onTap != null;
+
+  bool get _supportsLongPress => widget.onLongPress != null;
+
+  bool get _hasNewContent {
+    final PosterNewContent? newContent = widget.newContent;
+
+    if (!widget.showNewContent || newContent == null) {
       return false;
     }
 
-    // NEW is meaningful only after the user has started this media.
-    return switch (widget.viewingStatus) {
-      PosterViewingStatus.notStarted => false,
-      PosterViewingStatus.dropped => false,
-      PosterViewingStatus.watching => true,
-      PosterViewingStatus.caughtUp => true,
-      PosterViewingStatus.completed => true,
-      PosterViewingStatus.rewatching => true,
-      PosterViewingStatus.onHold => true,
+    return switch (newContent.type) {
+      // A newly released movie, series, season, etc. may always show NEW.
+      PosterNewContentType.release => true,
+
+      // New episodes are relevant once the user has engaged with the title.
+      PosterNewContentType.episodes => switch (widget.viewingStatus) {
+        PosterViewingStatus.notStarted => false,
+        PosterViewingStatus.watching => true,
+        PosterViewingStatus.caughtUp => true,
+        PosterViewingStatus.completed => true,
+        PosterViewingStatus.rewatching => true,
+        PosterViewingStatus.onHold => true,
+        PosterViewingStatus.dropped => false,
+      },
     };
   }
 
@@ -434,8 +526,6 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
 
     final double progress = rawProgress.clamp(0.0, 1.0);
 
-    // A permanently full progress bar adds little information once a title is
-    // already represented as completed/caught-up.
     if (progress >= 0.999 &&
         (widget.viewingStatus == PosterViewingStatus.completed ||
             widget.viewingStatus == PosterViewingStatus.caughtUp)) {
@@ -445,98 +535,135 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
     return progress;
   }
 
+  bool get _quickActionShowsWatchlist {
+    final PosterQuickAction? action = widget.quickAction;
+
+    return action != null &&
+        action.isActive &&
+        action.type == PosterQuickActionType.watchlist;
+  }
+
+  bool get _quickActionShowsFavourite {
+    final PosterQuickAction? action = widget.quickAction;
+
+    return action != null &&
+        action.isActive &&
+        action.type == PosterQuickActionType.favourite;
+  }
+
+  bool get _quickActionShowsWatched {
+    final PosterQuickAction? action = widget.quickAction;
+
+    return action != null &&
+        action.isActive &&
+        action.type == PosterQuickActionType.watched;
+  }
+
   List<_PosterStatusItem> get _statusItems {
     final List<_PosterStatusItem> items = <_PosterStatusItem>[];
 
-    switch (widget.viewingStatus) {
-      case PosterViewingStatus.notStarted:
-        break;
+    if (widget.statusContext != PosterStatusContext.viewingStatus &&
+        !_quickActionShowsWatched) {
+      switch (widget.viewingStatus) {
+        case PosterViewingStatus.notStarted:
+          break;
 
-      case PosterViewingStatus.watching:
-        // The progress edge already communicates "watching" when available.
-        if (_normalisedProgress == null) {
+        case PosterViewingStatus.watching:
+          if (_normalisedProgress == null) {
+            items.add(
+              _PosterStatusItem(
+                icon: Icons.play_arrow_rounded,
+                semanticLabel: widget.labels.watching,
+                tone: _PosterStatusTone.watching,
+              ),
+            );
+          }
+          break;
+
+        case PosterViewingStatus.caughtUp:
           items.add(
             _PosterStatusItem(
-              icon: Icons.play_arrow_rounded,
-              semanticLabel: widget.labels.watching,
-              tone: _PosterStatusTone.info,
+              icon: Icons.done_all_rounded,
+              semanticLabel: widget.labels.caughtUp,
+              tone: _PosterStatusTone.completed,
             ),
           );
-        }
-        break;
+          break;
 
-      case PosterViewingStatus.caughtUp:
-        items.add(
-          _PosterStatusItem(
-            icon: Icons.done_all_rounded,
-            semanticLabel: widget.labels.caughtUp,
-            tone: _PosterStatusTone.success,
-          ),
-        );
-        break;
+        case PosterViewingStatus.completed:
+          items.add(
+            _PosterStatusItem(
+              icon: Icons.check_rounded,
+              semanticLabel: widget.labels.completed,
+              tone: _PosterStatusTone.completed,
+            ),
+          );
+          break;
 
-      case PosterViewingStatus.completed:
-        items.add(
-          _PosterStatusItem(
-            icon: Icons.check_rounded,
-            semanticLabel: widget.labels.completed,
-            tone: _PosterStatusTone.success,
-          ),
-        );
-        break;
+        case PosterViewingStatus.rewatching:
+          items.add(
+            _PosterStatusItem(
+              icon: Icons.replay_rounded,
+              semanticLabel: widget.labels.rewatching,
+              tone: _PosterStatusTone.rewatching,
+            ),
+          );
+          break;
 
-      case PosterViewingStatus.rewatching:
-        // Rewatching already implies previous completion, so a second
-        // completed icon would be redundant.
-        items.add(
-          _PosterStatusItem(
-            icon: Icons.replay_rounded,
-            semanticLabel: widget.labels.rewatching,
-            tone: _PosterStatusTone.rewatching,
-          ),
-        );
-        break;
+        case PosterViewingStatus.onHold:
+          items.add(
+            _PosterStatusItem(
+              icon: Icons.pause_rounded,
+              semanticLabel: widget.labels.onHold,
+              tone: _PosterStatusTone.onHold,
+            ),
+          );
+          break;
 
-      case PosterViewingStatus.onHold:
-        items.add(
-          _PosterStatusItem(
-            icon: Icons.pause_rounded,
-            semanticLabel: widget.labels.onHold,
-            tone: _PosterStatusTone.warning,
-          ),
-        );
-        break;
-
-      case PosterViewingStatus.dropped:
-        items.add(
-          _PosterStatusItem(
-            icon: Icons.block_rounded,
-            semanticLabel: widget.labels.dropped,
-            tone: _PosterStatusTone.error,
-          ),
-        );
-        break;
+        case PosterViewingStatus.dropped:
+          items.add(
+            _PosterStatusItem(
+              icon: Icons.block_rounded,
+              semanticLabel: widget.labels.dropped,
+              tone: _PosterStatusTone.dropped,
+            ),
+          );
+          break;
+      }
     }
 
-    if (widget.isFavourite) {
+    if (widget.isInWatchlist &&
+        !_quickActionShowsWatchlist &&
+        widget.statusContext != PosterStatusContext.watchlist) {
+      items.add(
+        _PosterStatusItem(
+          icon: Icons.bookmark_rounded,
+          semanticLabel: widget.labels.watchlist,
+          tone: _PosterStatusTone.watchlist,
+        ),
+      );
+    }
+
+    if (widget.isFavourite &&
+        !_quickActionShowsFavourite &&
+        widget.statusContext != PosterStatusContext.favourite) {
       items.add(
         _PosterStatusItem(
           icon: Icons.favorite_rounded,
-          semanticLabel: widget.labels.favorite,
+          semanticLabel: widget.labels.favourite,
           tone: _PosterStatusTone.favourite,
         ),
       );
     }
 
-    if (widget.collectionCount > 0) {
+    if (widget.collectionCount > 0 &&
+        widget.statusContext != PosterStatusContext.collection) {
       items.add(
         _PosterStatusItem(
           icon: Icons.video_library_rounded,
           semanticLabel:
               widget.collectionSemanticLabel ??
-              (widget.collectionCount == 1
-                  ? 'In one collection'
-                  : 'In ${widget.collectionCount} collections'),
+              widget.labels.collectionCount(widget.collectionCount),
           tone: _PosterStatusTone.collection,
         ),
       );
@@ -574,6 +701,11 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
       parts.add(subtitle);
     }
 
+    if (widget.secondarySubtitle case final String secondarySubtitle
+        when secondarySubtitle.trim().isNotEmpty) {
+      parts.add(secondarySubtitle);
+    }
+
     if (widget.externalRating case final PosterExternalRating rating
         when widget.showExternalRating) {
       parts.add(
@@ -583,56 +715,119 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
 
     if (widget.userRating case final String rating
         when rating.trim().isNotEmpty && widget.showUserRating) {
-      parts.add('Your rating $rating');
+      parts.add(widget.labels.userRating(rating));
     }
 
     if (widget.viewingStatus != PosterViewingStatus.notStarted) {
       parts.add(_viewingStatusSemanticLabel);
     }
 
-    if (_hasNewEpisodes) {
+    final PosterNewContent? newContent = widget.newContent;
+
+    if (_hasNewContent && newContent != null) {
       parts.add(
-        widget.newEpisodesSemanticLabel ??
-            (widget.newEpisodeCount == 1
-                ? 'One new episode available'
-                : '${widget.newEpisodeCount} new episodes available'),
+        widget.newContentSemanticLabel ??
+            widget.labels.newContentDescription(
+              newContent.type,
+              newContent.count,
+            ),
       );
     }
 
     if (widget.isFavourite) {
-      parts.add('Favourite');
+      parts.add(widget.labels.favourite);
     }
 
     if (widget.collectionCount > 0) {
       parts.add(
-        widget.collectionCount == 1
-            ? 'In one collection'
-            : 'In ${widget.collectionCount} collections',
+        widget.collectionSemanticLabel ??
+            widget.labels.collectionCount(widget.collectionCount),
       );
     }
 
     if (widget.quickAction case final PosterQuickAction quickAction) {
       if (quickAction.type == PosterQuickActionType.watchlist &&
           quickAction.isActive) {
-        parts.add('In watchlist');
+        parts.add(widget.labels.watchlist);
       }
     }
 
     if (_normalisedProgress case final double progress) {
-      parts.add('${(progress * 100).round()} percent watched');
+      final int percentage = (progress * 100).round();
+
+      parts.add(
+        widget.progressSemanticLabel ?? widget.labels.progress(percentage),
+      );
     }
 
     return parts.join(', ');
   }
 
-  void _handleHighlightChanged(bool highlighted) {
-    if (_isPressed == highlighted) {
+  void _handleTapDown(TapDownDetails details) {
+    if (_isPressed) {
+      return;
+    }
+
+    _pressStartedAt = DateTime.now();
+
+    setState(() {
+      _isPressed = true;
+    });
+  }
+
+  void _handleTap() {
+    final VoidCallback? callback = widget.onTap;
+
+    if (callback == null) {
+      return;
+    }
+
+    _scheduleRelease();
+
+    callback();
+  }
+
+  void _handleTapCancel() {
+    _scheduleRelease();
+  }
+
+  void _scheduleRelease() {
+    if (!_isPressed) {
+      return;
+    }
+
+    final DateTime startedAt = _pressStartedAt ?? DateTime.now();
+
+    final Duration elapsed = DateTime.now().difference(startedAt);
+
+    final Duration remaining = elapsed >= _minimumPressDuration
+        ? Duration.zero
+        : _minimumPressDuration - elapsed;
+
+    if (remaining == Duration.zero) {
+      _releasePressedState();
+      return;
+    }
+
+    Future<void>.delayed(remaining, () {
+      if (!mounted) {
+        return;
+      }
+
+      _releasePressedState();
+    });
+  }
+
+  void _releasePressedState() {
+    if (!_isPressed) {
       return;
     }
 
     setState(() {
-      _isPressed = highlighted;
+      _isPressed = false;
     });
+
+    _pressStartedAt = null;
   }
 
   void _handleLongPress() {
@@ -651,9 +846,6 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme colorScheme = theme.colorScheme;
-
     final bool reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
@@ -661,68 +853,112 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
         ? Duration.zero
         : CinearaMotion.fast;
 
+    final Duration scaleDuration = reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 90);
+
     final BorderRadius artworkRadius = BorderRadius.circular(CinearaRadii.lg);
 
     final Widget artwork = _PosterArtwork(
       title: widget.title,
       imageUrl: widget.imageUrl,
       worldIdentity: widget.showWorldIdentity ? widget.worldIdentity : null,
+      userRating: widget.showUserRating ? widget.userRating : null,
       externalRating: widget.showExternalRating ? widget.externalRating : null,
       statusItems: widget.showStatusDock
           ? _statusItems
           : const <_PosterStatusItem>[],
       quickAction: widget.quickAction,
       progress: _normalisedProgress,
-      newEpisodeCount: _hasNewEpisodes ? widget.newEpisodeCount : 0,
-      newEpisodesLabel: widget.labels.newEpisodes,
+      newContent: _hasNewContent ? widget.newContent : null,
+      newContentLabel: widget.labels.newContent,
+      labels: widget.labels,
       aspectRatio: widget.aspectRatio,
-      showWorldline: widget.showWorldline,
-      onWorldIdentityTap: widget.onWorldIdentityTap,
       enableHaptics: widget.enableHaptics,
       animationDuration: interactionDuration,
     );
 
     final Widget artworkCard = AnimatedScale(
-      scale: _isPressed && !reduceMotion ? 0.975 : 1.0,
-      duration: interactionDuration,
+      scale: _isPressed && !reduceMotion ? 0.985 : 1.0,
+      duration: scaleDuration,
       curve: Curves.easeOutCubic,
       child: AnimatedContainer(
-        duration: interactionDuration,
+        duration: scaleDuration,
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           borderRadius: artworkRadius,
+
+          // Soft Cineara outer glow.
           boxShadow: _isPressed
               ? <BoxShadow>[
                   BoxShadow(
-                    color: colorScheme.primary.withValues(alpha: 0.20),
+                    color: CinearaColours.logoViolet.withValues(alpha: 0.28),
                     blurRadius: 14,
                     spreadRadius: 1,
                   ),
+                  BoxShadow(
+                    color: CinearaColours.logoBlue.withValues(alpha: 0.10),
+                    blurRadius: 22,
+                    spreadRadius: 2,
+                  ),
                 ]
               : const <BoxShadow>[],
-        ),
-        foregroundDecoration: BoxDecoration(
-          borderRadius: artworkRadius,
-          border: Border.all(
-            color: _isPressed
-                ? colorScheme.primary.withValues(alpha: 0.82)
-                : colorScheme.outlineVariant.withValues(alpha: 0.24),
-            width: _isPressed ? 1.5 : 0.75,
-          ),
         ),
         child: Card(
           margin: EdgeInsets.zero,
           elevation: 0,
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(borderRadius: artworkRadius),
-          child: InkWell(
-            excludeFromSemantics: true,
-            onTap: widget.onTap,
-            onLongPress: widget.onLongPress == null ? null : _handleLongPress,
-            onHighlightChanged: _isInteractive ? _handleHighlightChanged : null,
-            splashColor: colorScheme.primary.withValues(alpha: 0.10),
-            highlightColor: colorScheme.primary.withValues(alpha: 0.05),
-            child: artwork,
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: <Widget>[
+              InkWell(
+                excludeFromSemantics: true,
+                onTap: widget.onTap == null ? null : _handleTap,
+                onTapDown: _isTappable ? _handleTapDown : null,
+                onTapCancel: _isTappable ? _handleTapCancel : null,
+                onLongPress: _supportsLongPress ? _handleLongPress : null,
+                splashFactory: NoSplash.splashFactory,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                borderRadius: artworkRadius,
+                child: artwork,
+              ),
+
+              // Subtle inner glow that is guaranteed to remain visible even if
+              // the surrounding grid clips external shadows.
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _isPressed && !reduceMotion ? 1.0 : 0.0,
+                    duration: scaleDuration,
+                    curve: Curves.easeOutCubic,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: artworkRadius,
+                        border: Border.all(
+                          color: CinearaColours.logoViolet.withValues(
+                            alpha: 0.55,
+                          ),
+                          width: 1.25,
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: <Color>[
+                            CinearaColours.logoPink.withValues(alpha: 0.10),
+                            CinearaColours.logoViolet.withValues(alpha: 0.055),
+                            Colors.transparent,
+                            CinearaColours.logoBlue.withValues(alpha: 0.09),
+                          ],
+                          stops: const <double>[0.0, 0.30, 0.60, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -733,16 +969,16 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         artworkCard,
+
         if (widget.layout ==
             PosterMediaCardLayout.artworkWithInformation) ...<Widget>[
           const SizedBox(height: CinearaSpacing.xs),
+
           _PosterInformation(
             title: widget.title,
             subtitle: widget.subtitle,
-            userRating: widget.showUserRating ? widget.userRating : null,
+            secondarySubtitle: widget.secondarySubtitle,
             maxTitleLines: widget.maxTitleLines,
-            onUserRatingTap: widget.onUserRatingTap,
-            enableHaptics: widget.enableHaptics,
           ),
         ],
       ],
@@ -754,6 +990,7 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
       button: widget.onTap != null,
       label: _resolvedSemanticLabel,
       onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
       child: content,
     );
   }
@@ -788,39 +1025,58 @@ class _PosterArtwork extends StatelessWidget {
     required this.imageUrl,
     required this.worldIdentity,
     required this.externalRating,
+    required this.userRating,
     required this.statusItems,
     required this.quickAction,
     required this.progress,
-    required this.newEpisodeCount,
-    required this.newEpisodesLabel,
+    required this.newContent,
+    required this.newContentLabel,
+    required this.labels,
     required this.aspectRatio,
-    required this.showWorldline,
-    required this.onWorldIdentityTap,
     required this.enableHaptics,
     required this.animationDuration,
   });
 
+  /// Media title, also used for accessibility and image fallback content.
   final String title;
+
+  /// Poster image URL, or null when no artwork is available.
   final String? imageUrl;
 
+  /// Optional world-cinema identity shown on the poster.
   final PosterWorldIdentity? worldIdentity;
+
+  /// Optional user rating.
+  final String? userRating;
+
+  /// Optional external rating such as IMDb or TMDB.
   final PosterExternalRating? externalRating;
 
+  /// Status indicators displayed on the poster.
   final List<_PosterStatusItem> statusItems;
+
+  /// Optional quick action displayed on the artwork.
   final PosterQuickAction? quickAction;
 
+  /// Viewing progress from 0.0 to 1.0, or null when not shown.
   final double? progress;
 
-  final int newEpisodeCount;
-  final String newEpisodesLabel;
+  /// Newly available content, or null when the NEW marker is hidden.
+  final PosterNewContent? newContent;
 
+  /// Short localized label used by the NEW marker.
+  final String newContentLabel;
+
+  /// Localized labels used by poster controls.
+  final PosterMediaCardLabels labels;
+
+  /// Width-to-height ratio of the poster artwork.
   final double aspectRatio;
 
-  final bool showWorldline;
-
-  final VoidCallback? onWorldIdentityTap;
-
+  /// Whether supported interactions should trigger haptic feedback.
   final bool enableHaptics;
+
+  /// Duration used by artwork animations and transitions.
   final Duration animationDuration;
 
   @override
@@ -836,18 +1092,21 @@ class _PosterArtwork extends StatelessWidget {
           final _PosterDensity density = _resolveDensity(width);
 
           final bool hasWorldIdentity = worldIdentity != null;
-          final bool hasNewEpisodes = newEpisodeCount > 0;
+          final bool hasNewContent = newContent != null;
+          final bool hasUserRating =
+              userRating != null && userRating!.trim().isNotEmpty;
 
           // World identity is a core Cineara feature and therefore receives
           // higher priority than external ratings on tiny cards.
           final bool canShowExternalRating =
               externalRating != null &&
               !(density == _PosterDensity.tiny &&
-                  (hasWorldIdentity || hasNewEpisodes));
+                  (hasWorldIdentity || hasNewContent));
 
-          final bool useCompactWorldLabel =
-              density == _PosterDensity.tiny ||
-              density == _PosterDensity.compact;
+          // The personal score is lower-priority overlay information. On tiny
+          // posters it is removed before core Cineara identity and state.
+          final bool canShowUserRating =
+              hasUserRating && density != _PosterDensity.tiny;
 
           // IMDb/TMDb source names are hidden before the rating itself when
           // horizontal space becomes limited.
@@ -867,19 +1126,17 @@ class _PosterArtwork extends StatelessWidget {
                   quickAction != null &&
                   width < 84);
 
-          final double overlayInset = switch (density) {
-            _PosterDensity.tiny => CinearaSpacing.xxs,
-            _PosterDensity.compact => CinearaSpacing.xxs,
-            _PosterDensity.regular => CinearaSpacing.xs,
-            _PosterDensity.spacious => CinearaSpacing.xs,
-          };
+          const double overlayInset = CinearaSpacing.xs;
 
           final bool hasTopOverlay = hasWorldIdentity || canShowExternalRating;
 
           final bool hasBottomOverlay =
-              canShowStatusDock || quickAction != null;
+              canShowUserRating || canShowStatusDock || quickAction != null;
 
-          final double newBadgeTop = hasTopOverlay
+          // NEW belongs to the world-identity side of the poster rather than
+          // the rating side. It therefore only needs to clear the
+          // world-identity chip.
+          final double newBadgeTop = hasWorldIdentity
               ? switch (density) {
                   _PosterDensity.tiny => 34,
                   _PosterDensity.compact => 36,
@@ -895,7 +1152,7 @@ class _PosterArtwork extends StatelessWidget {
               _PosterImage(title: title, imageUrl: imageUrl),
 
               _PosterGradient(
-                showTop: hasTopOverlay || hasNewEpisodes,
+                showTop: hasTopOverlay || hasNewContent,
                 showBottom: hasBottomOverlay || progress != null,
               ),
 
@@ -914,12 +1171,7 @@ class _PosterArtwork extends StatelessWidget {
                         Expanded(
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: _WorldIdentityChip(
-                              identity: identity,
-                              compact: useCompactWorldLabel,
-                              onTap: onWorldIdentityTap,
-                              enableHaptics: enableHaptics,
-                            ),
+                            child: _WorldIdentityChip(identity: identity),
                           ),
                         )
                       else
@@ -938,19 +1190,13 @@ class _PosterArtwork extends StatelessWidget {
                 ),
 
               //
-              // NEW EPISODES
+              // NEW CONTENT
               //
-              if (hasNewEpisodes)
+              if (hasNewContent)
                 Positioned(
                   top: newBadgeTop,
                   right: overlayInset + 2,
-                  child: _NewEpisodesBadge(
-                    count: newEpisodeCount,
-                    label: newEpisodesLabel,
-                    compact:
-                        density == _PosterDensity.tiny ||
-                        density == _PosterDensity.compact,
-                  ),
+                  child: _NewContentBadge(label: newContentLabel),
                 ),
 
               //
@@ -964,20 +1210,38 @@ class _PosterArtwork extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: <Widget>[
-                      if (canShowStatusDock)
+                      if (canShowUserRating || canShowStatusDock)
                         Expanded(
                           child: Align(
                             alignment: Alignment.bottomLeft,
-                            child: _PosterStatusDock(
-                              items: statusItems,
-                              maxVisibleItems: maxVisibleStatuses,
-                              animationDuration: animationDuration,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                // Personal Cineara rating.
+                                if (canShowUserRating)
+                                  _UserRatingMark(value: userRating!),
+
+                                // Small separation between rating and status
+                                // dock.
+                                if (canShowUserRating && canShowStatusDock)
+                                  const SizedBox(height: CinearaSpacing.xxs),
+
+                                // Passive personal/media states.
+                                if (canShowStatusDock)
+                                  _PosterStatusDock(
+                                    items: statusItems,
+                                    maxVisibleItems: maxVisibleStatuses,
+                                    animationDuration: animationDuration,
+                                  ),
+                              ],
                             ),
                           ),
                         )
                       else
                         const Spacer(),
 
+                      // Interactive quick-add / manage control.
                       if (quickAction case final PosterQuickAction action)
                         _PosterQuickActionButton(
                           action: action,
@@ -985,23 +1249,22 @@ class _PosterArtwork extends StatelessWidget {
                           density: density,
                           enableHaptics: enableHaptics,
                           animationDuration: animationDuration,
+                          labels: labels,
                         ),
                     ],
                   ),
                 ),
 
               //
-              // CINEARA WORLDLINE / PROGRESS EDGE
+              // CINEARA PROGRESS EDGE
               //
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _PosterJourneyEdge(
-                  progress: progress,
-                  showWorldline: showWorldline,
+              if (progress != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _PosterJourneyEdge(progress: progress!),
                 ),
-              ),
             ],
           );
         },
@@ -1014,7 +1277,10 @@ class _PosterArtwork extends StatelessWidget {
 class _PosterImage extends StatelessWidget {
   const _PosterImage({required this.title, required this.imageUrl});
 
+  /// Media title, also used for accessibility and image fallback content.
   final String title;
+
+  /// Poster image URL, or null when no artwork is available.
   final String? imageUrl;
 
   @override
@@ -1074,6 +1340,7 @@ class _PosterImage extends StatelessWidget {
 class _PosterPlaceholder extends StatelessWidget {
   const _PosterPlaceholder({required this.title});
 
+  /// Media title used by the placeholder.
   final String title;
 
   @override
@@ -1133,7 +1400,10 @@ class _PosterPlaceholder extends StatelessWidget {
 class _PosterGradient extends StatelessWidget {
   const _PosterGradient({required this.showTop, required this.showBottom});
 
+  /// Whether to show the gradient at the top of the poster.
   final bool showTop;
+
+  /// Whether to show the gradient at the bottom of the poster.
   final bool showBottom;
 
   @override
@@ -1158,71 +1428,55 @@ class _PosterGradient extends StatelessWidget {
   }
 }
 
-/// Cineara's interactive world-cinema Compass.
+/// Compact Cineara world-cinema marker.
+///
+/// Only the stable country/region code is rendered on poster artwork.
+/// Richer cultural identity such as `K-Drama`, `Anime`, `Malayalam`, etc.
+/// belongs in metadata, the detail screen, World Lens or the long-press sheet.
+///
+/// The marker uses fixed dimensions and fixed line metrics so its visual
+/// footprint remains consistent across cards, glyphs and fonts.
 class _WorldIdentityChip extends StatelessWidget {
-  const _WorldIdentityChip({
-    required this.identity,
-    required this.compact,
-    required this.onTap,
-    required this.enableHaptics,
-  });
+  const _WorldIdentityChip({required this.identity});
 
   final PosterWorldIdentity identity;
-  final bool compact;
-  final VoidCallback? onTap;
-  final bool enableHaptics;
-
-  void _handleTap() {
-    if (enableHaptics) {
-      HapticFeedback.selectionClick();
-    }
-
-    onTap?.call();
-  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    final String label = compact ? identity.compactLabel : identity.label;
-
     return Semantics(
-      button: onTap != null,
       label: identity.semanticLabel,
       child: ExcludeSemantics(
-        child: Material(
-          color: CinearaColours.brand700.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(CinearaRadii.pill),
-          child: InkWell(
-            onTap: onTap == null ? null : _handleTap,
+        child: Container(
+          width: CinearaSpacing.xl,
+          height: CinearaSpacing.lg,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: CinearaColours.brand700.withValues(alpha: 0.92),
             borderRadius: BorderRadius.circular(CinearaRadii.pill),
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: compact ? CinearaSpacing.xs : CinearaSpacing.sm,
-                vertical: CinearaSpacing.xxs,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(
-                    Icons.public_rounded,
-                    size: 13,
-                    color: CinearaColours.neutral0,
-                  ),
-                  const SizedBox(width: CinearaSpacing.xxs),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: CinearaColours.neutral0,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            border: Border.all(
+              color: CinearaColours.neutral0.withValues(alpha: 0.16),
+              width: 1,
+            ),
+          ),
+          child: Text(
+            identity.compactLabel,
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            textAlign: TextAlign.center,
+            strutStyle: const StrutStyle(
+              fontSize: CinearaFontSizes.labelSmall,
+              height: 1,
+              forceStrutHeight: true,
+            ),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: CinearaColours.neutral0,
+              fontSize: CinearaFontSizes.labelSmall,
+              fontWeight: FontWeight.w800,
+              height: 1,
+              letterSpacing: 0.2,
             ),
           ),
         ),
@@ -1233,12 +1487,16 @@ class _WorldIdentityChip extends StatelessWidget {
 
 /// External/community rating.
 ///
-/// On medium cards Cineara keeps the number but removes the source label.
-/// On spacious cards both source and value are displayed.
+/// The rating uses the same compact geometry and line metrics as Cineara's
+/// world marker. On spacious cards the source is shown alongside the value;
+/// otherwise only the rating value is displayed.
 class _ExternalRatingMark extends StatelessWidget {
   const _ExternalRatingMark({required this.rating, required this.showSource});
 
+  /// External rating value and source information.
   final PosterExternalRating rating;
+
+  /// Whether to show the rating source label.
   final bool showSource;
 
   @override
@@ -1246,72 +1504,165 @@ class _ExternalRatingMark extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return ExcludeSemantics(
-      child: DecoratedBox(
+      child: Container(
+        width: showSource ? null : CinearaSpacing.xl,
+        height: CinearaSpacing.lg,
+        constraints: showSource ? const BoxConstraints(minWidth: 32) : null,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.70),
           borderRadius: BorderRadius.circular(CinearaRadii.pill),
           border: Border.all(
             color: CinearaColours.neutral0.withValues(alpha: 0.16),
+            width: 1,
           ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: CinearaSpacing.xs,
-            vertical: CinearaSpacing.xxs,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              if (showSource) ...<Widget>[
-                Text(
-                  rating.sourceLabel,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: CinearaColours.neutral0.withValues(alpha: 0.76),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: CinearaSpacing.xxs),
-              ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            if (showSource) ...<Widget>[
               Text(
-                rating.value,
+                rating.sourceLabel,
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                strutStyle: const StrutStyle(
+                  fontSize: CinearaFontSizes.labelSmall,
+                  height: 1,
+                  forceStrutHeight: true,
+                ),
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: CinearaColours.neutral0,
-                  fontWeight: FontWeight.w800,
+                  color: CinearaColours.neutral0.withValues(alpha: 0.76),
+                  fontSize: CinearaFontSizes.labelSmall,
+                  fontWeight: FontWeight.w600,
+                  height: 1,
                 ),
               ),
+              const SizedBox(width: CinearaSpacing.xxs),
             ],
-          ),
+            Text(
+              rating.value,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              textAlign: TextAlign.center,
+              strutStyle: const StrutStyle(
+                fontSize: CinearaFontSizes.labelSmall,
+                height: 1,
+                forceStrutHeight: true,
+              ),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: CinearaColours.neutral0,
+                fontSize: CinearaFontSizes.labelSmall,
+                fontWeight: FontWeight.w800,
+                height: 1,
+
+                // Keeps rating digits visually consistent.
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Tilted event marker shown when new episodes are available.
+/// Passive personal Cineara rating.
 ///
-/// This intentionally looks different from normal state indicators because
-/// "NEW" is a temporary event, not a permanent user relationship.
-class _NewEpisodesBadge extends StatelessWidget {
-  const _NewEpisodesBadge({
-    required this.count,
-    required this.label,
-    required this.compact,
-  });
+/// Uses the same compact height and visual treatment as the status dock.
+/// The fixed width keeps values such as `9.2` and `10` visually consistent.
+class _UserRatingMark extends StatelessWidget {
+  const _UserRatingMark({required this.value});
 
-  final int count;
-  final String label;
-  final bool compact;
+  /// Rating personally assigned by the current user.
+  final String value;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    final String displayLabel = !compact && count > 1 ? '$count $label' : label;
+    return ExcludeSemantics(
+      child: Container(
+        width: 38,
+        height: 20,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.70),
+          borderRadius: BorderRadius.circular(CinearaRadii.pill),
+          border: Border.all(
+            color: CinearaColours.neutral0.withValues(alpha: 0.16),
+            width: 1,
+          ),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 5,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            const Icon(
+              Icons.star_rounded,
+              size: 9,
+              color: CinearaColours.userRating,
+            ),
+            const SizedBox(width: 2),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              textAlign: TextAlign.center,
+              strutStyle: const StrutStyle(
+                fontSize: 10,
+                height: 1,
+                forceStrutHeight: true,
+              ),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: CinearaColours.userRating,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                height: 1,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tilted event marker shown when newly available content exists.
+///
+/// This intentionally looks different from normal state indicators because
+/// "NEW" is a temporary event, not a permanent user relationship.
+///
+/// The badge uses a fixed height and fixed line metrics so translated labels
+/// and fallback fonts do not change its vertical footprint.
+class _NewContentBadge extends StatelessWidget {
+  const _NewContentBadge({required this.label});
+
+  /// Short localized label displayed by the marker.
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
 
     return IgnorePointer(
       child: Transform.rotate(
         angle: -0.10,
-        child: DecoratedBox(
+        child: Container(
+          height: 20,
+          padding: const EdgeInsets.symmetric(horizontal: CinearaSpacing.xs),
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
@@ -1327,25 +1678,28 @@ class _NewEpisodesBadge extends StatelessWidget {
             ),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.30),
+                color: Colors.black.withValues(alpha: 0.50),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
             ],
           ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? CinearaSpacing.xs : CinearaSpacing.sm,
-              vertical: CinearaSpacing.xxs,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            textAlign: TextAlign.center,
+            strutStyle: const StrutStyle(
+              fontSize: CinearaFontSizes.labelSmall,
+              height: 1,
+              forceStrutHeight: true,
             ),
-            child: Text(
-              displayLabel,
-              maxLines: 1,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: CinearaColours.neutral0,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.6,
-              ),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: CinearaColours.neutral0,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              height: 1,
             ),
           ),
         ),
@@ -1356,13 +1710,14 @@ class _NewEpisodesBadge extends StatelessWidget {
 
 /// Semantic visual category for one passive personal-state icon.
 enum _PosterStatusTone {
-  success,
+  watching,
+  completed,
+  watchlist,
   favourite,
   collection,
   rewatching,
-  warning,
-  error,
-  info,
+  onHold,
+  dropped,
 }
 
 /// One passive status item.
@@ -1374,16 +1729,21 @@ class _PosterStatusItem {
     required this.tone,
   });
 
+  /// Icon representing the status.
   final IconData icon;
+
+  /// Accessibility label describing the status.
   final String semanticLabel;
+
+  /// Visual colour category used for the status.
   final _PosterStatusTone tone;
 }
 
 /// Compact Cineara Status Dock.
 ///
-/// Individual icons are colour-coded, while the dock itself deliberately
-/// remains visually neutral so several states can coexist without producing
-/// a row of unrelated coloured badges.
+/// The dock smoothly expands and contracts as personal states change.
+/// Newly added status icons animate independently so existing states remain
+/// visually stable.
 class _PosterStatusDock extends StatelessWidget {
   const _PosterStatusDock({
     required this.items,
@@ -1391,21 +1751,26 @@ class _PosterStatusDock extends StatelessWidget {
     required this.animationDuration,
   });
 
+  /// Status items available to display.
   final List<_PosterStatusItem> items;
+
+  /// Maximum number of status items shown at once.
   final int maxVisibleItems;
+
+  /// Duration used for dock state transitions.
   final Duration animationDuration;
 
-  Color _resolveStatusColor(BuildContext context, _PosterStatusTone tone) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-
+  /// Resolves the colour associated with each personal-state category.
+  Color _resolveStatusColor(_PosterStatusTone tone) {
     return switch (tone) {
-      _PosterStatusTone.success => CinearaColours.success,
-      _PosterStatusTone.favourite => CinearaColours.logoPink,
-      _PosterStatusTone.collection => CinearaColours.logoBlue,
-      _PosterStatusTone.rewatching => CinearaColours.logoViolet,
-      _PosterStatusTone.warning => CinearaColours.warning,
-      _PosterStatusTone.error => colorScheme.error,
-      _PosterStatusTone.info => CinearaColours.brand300,
+      _PosterStatusTone.watching => CinearaColours.statusWatching,
+      _PosterStatusTone.completed => CinearaColours.statusCompleted,
+      _PosterStatusTone.watchlist => CinearaColours.statusWatchlist,
+      _PosterStatusTone.favourite => CinearaColours.statusFavourite,
+      _PosterStatusTone.collection => CinearaColours.statusCollection,
+      _PosterStatusTone.rewatching => CinearaColours.statusRewatching,
+      _PosterStatusTone.onHold => CinearaColours.statusOnHold,
+      _PosterStatusTone.dropped => CinearaColours.statusDropped,
     };
   }
 
@@ -1423,74 +1788,156 @@ class _PosterStatusDock extends StatelessWidget {
 
     final int hiddenCount = items.length - visibleItems.length;
 
-    final String stateKey = <String>[
-      ...visibleItems.map((_PosterStatusItem item) => item.semanticLabel),
-      if (hiddenCount > 0) '+$hiddenCount',
-    ].join('|');
-
     return ExcludeSemantics(
       child: AnimatedSize(
         duration: animationDuration,
         curve: Curves.easeOutCubic,
-        child: AnimatedSwitcher(
-          duration: animationDuration,
-          child: DecoratedBox(
-            key: ValueKey<String>(stateKey),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.62),
-              borderRadius: BorderRadius.circular(CinearaRadii.pill),
-              border: Border.all(
-                color: CinearaColours.neutral0.withValues(alpha: 0.18),
-              ),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+        alignment: Alignment.centerLeft,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.62),
+            borderRadius: BorderRadius.circular(CinearaRadii.pill),
+            border: Border.all(
+              color: CinearaColours.neutral0.withValues(alpha: 0.18),
+              width: 1,
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: CinearaSpacing.xs,
-                vertical: CinearaSpacing.xxs,
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 5,
+                offset: const Offset(0, 1),
               ),
+            ],
+          ),
+          child: SizedBox(
+            height: 20,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
                   for (
                     int index = 0;
                     index < visibleItems.length;
                     index++
                   ) ...<Widget>[
-                    Icon(
-                      visibleItems[index].icon,
-                      size: 15,
-                      color: _resolveStatusColor(
-                        context,
-                        visibleItems[index].tone,
-                      ),
+                    _AnimatedPosterStatusIcon(
+                      key: ValueKey<String>(visibleItems[index].semanticLabel),
+                      icon: visibleItems[index].icon,
+                      color: _resolveStatusColor(visibleItems[index].tone),
+                      animationDuration: animationDuration,
                     ),
-                    if (index != visibleItems.length - 1)
-                      const SizedBox(width: CinearaSpacing.xxs),
+
+                    if (index != visibleItems.length - 1 || hiddenCount > 0)
+                      const SizedBox(width: 3),
                   ],
 
-                  if (hiddenCount > 0) ...<Widget>[
-                    if (visibleItems.isNotEmpty)
-                      const SizedBox(width: CinearaSpacing.xxs),
-                    Text(
-                      '+$hiddenCount',
+                  if (hiddenCount > 0)
+                    _AnimatedPosterStatusOverflow(
+                      key: ValueKey<int>(hiddenCount),
+                      hiddenCount: hiddenCount,
+                      animationDuration: animationDuration,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: CinearaColours.neutral0,
+                        fontSize: 9,
                         fontWeight: FontWeight.w700,
+                        height: 1,
                       ),
                     ),
-                  ],
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Animates a newly introduced status icon.
+///
+/// Existing icons keep their state because each icon receives a stable key.
+class _AnimatedPosterStatusIcon extends StatelessWidget {
+  const _AnimatedPosterStatusIcon({
+    required this.icon,
+    required this.color,
+    required this.animationDuration,
+    super.key,
+  });
+
+  /// Icon representing the personal state.
+  final IconData icon;
+
+  /// Colour associated with the personal state.
+  final Color color;
+
+  /// Duration of the entrance animation.
+  final Duration animationDuration;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: animationDuration,
+      curve: Curves.easeOutCubic,
+      builder: (BuildContext context, double value, Widget? child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 2 * (1 - value)),
+            child: Transform.scale(scale: 0.88 + (0.12 * value), child: child),
+          ),
+        );
+      },
+      child: Icon(icon, size: 13, color: color),
+    );
+  }
+}
+
+/// Animated count used when additional status items are hidden.
+class _AnimatedPosterStatusOverflow extends StatelessWidget {
+  const _AnimatedPosterStatusOverflow({
+    required this.hiddenCount,
+    required this.animationDuration,
+    required this.style,
+    super.key,
+  });
+
+  /// Number of status items hidden from the compact dock.
+  final int hiddenCount;
+
+  /// Duration of the count transition.
+  final Duration animationDuration;
+
+  /// Text style used by the overflow count.
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: animationDuration,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: Text(
+        '+$hiddenCount',
+        key: ValueKey<int>(hiddenCount),
+        strutStyle: const StrutStyle(
+          fontSize: 9,
+          height: 1,
+          forceStrutHeight: true,
+        ),
+        style: style,
       ),
     );
   }
@@ -1504,6 +1951,7 @@ class _PosterQuickActionButton extends StatelessWidget {
     required this.density,
     required this.enableHaptics,
     required this.animationDuration,
+    required this.labels,
   });
 
   final PosterQuickAction action;
@@ -1511,6 +1959,7 @@ class _PosterQuickActionButton extends StatelessWidget {
   final _PosterDensity density;
   final bool enableHaptics;
   final Duration animationDuration;
+  final PosterMediaCardLabels labels;
 
   IconData get _icon {
     return switch (action.type) {
@@ -1533,20 +1982,7 @@ class _PosterQuickActionButton extends StatelessWidget {
       return label;
     }
 
-    return switch (action.type) {
-      PosterQuickActionType.watchlist =>
-        action.isActive
-            ? 'Remove $mediaTitle from watchlist'
-            : 'Add $mediaTitle to watchlist',
-      PosterQuickActionType.favourite =>
-        action.isActive
-            ? 'Remove $mediaTitle from favourites'
-            : 'Add $mediaTitle to favourites',
-      PosterQuickActionType.watched =>
-        action.isActive
-            ? 'Mark $mediaTitle as unwatched'
-            : 'Mark $mediaTitle as watched',
-    };
+    return labels.quickAction(action.type, action.isActive, mediaTitle);
   }
 
   void _handleTap() {
@@ -1648,43 +2084,15 @@ class _PosterQuickActionButton extends StatelessWidget {
   }
 }
 
-/// Cineara's bottom artwork edge.
-///
-/// Without progress it acts as a very subtle branded Worldline.
-/// With progress it becomes the user's viewing journey.
+/// Cineara's viewing progress edge at the bottom of the artwork.
 class _PosterJourneyEdge extends StatelessWidget {
-  const _PosterJourneyEdge({
-    required this.progress,
-    required this.showWorldline,
-  });
+  const _PosterJourneyEdge({required this.progress});
 
+  /// Viewing progress from 0.0 to 1.0.
   final double? progress;
-  final bool showWorldline;
 
   @override
   Widget build(BuildContext context) {
-    if (progress == null) {
-      if (!showWorldline) {
-        return const SizedBox.shrink();
-      }
-
-      return Opacity(
-        opacity: 0.38,
-        child: Container(
-          height: 1.5,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: <Color>[
-                CinearaColours.logoPink,
-                CinearaColours.logoViolet,
-                CinearaColours.logoBlue,
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     final ThemeData theme = Theme.of(context);
 
     final CinearaThemeExtension? cinearaTheme = theme
@@ -1726,24 +2134,26 @@ class _PosterJourneyEdge extends StatelessWidget {
 
 /// Information displayed beneath the physical poster artwork.
 ///
-/// The user's personal score lives here so it cannot be confused with IMDb,
-/// TMDb or another external rating.
+/// This area is intentionally limited to textual media information:
+///
+/// - title;
+/// - primary contextual metadata;
+/// - optional secondary contextual metadata.
+///
+/// Ratings are handled inside the poster artwork so the information block
+/// remains compact and visually consistent between rated and unrated media.
 class _PosterInformation extends StatelessWidget {
   const _PosterInformation({
     required this.title,
     required this.subtitle,
-    required this.userRating,
+    required this.secondarySubtitle,
     required this.maxTitleLines,
-    required this.onUserRatingTap,
-    required this.enableHaptics,
   });
 
   final String title;
   final String? subtitle;
-  final String? userRating;
+  final String? secondarySubtitle;
   final int maxTitleLines;
-  final VoidCallback? onUserRatingTap;
-  final bool enableHaptics;
 
   @override
   Widget build(BuildContext context) {
@@ -1751,144 +2161,61 @@ class _PosterInformation extends StatelessWidget {
 
     final bool hasSubtitle = subtitle != null && subtitle!.trim().isNotEmpty;
 
-    final bool hasUserRating =
-        userRating != null && userRating!.trim().isNotEmpty;
+    final bool hasSecondarySubtitle =
+        secondarySubtitle != null && secondarySubtitle!.trim().isNotEmpty;
 
-    // No horizontal padding: title and metadata visually align with the
-    // artwork's outer edge.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        //
+        // TITLE
+        //
         Text(
           title,
           maxLines: maxTitleLines,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.titleSmall?.copyWith(
+            fontSize: 14,
+            height: 1.18,
             fontWeight: FontWeight.w600,
+            letterSpacing: -0.1,
           ),
         ),
 
-        if (hasSubtitle || hasUserRating) ...<Widget>[
+        //
+        // PRIMARY METADATA
+        //
+        if (hasSubtitle) ...<Widget>[
           const SizedBox(height: CinearaSpacing.xxs),
-
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final bool showUserLabel = constraints.maxWidth >= 180;
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  if (hasSubtitle)
-                    Expanded(
-                      child: Text(
-                        subtitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    )
-                  else
-                    const Spacer(),
-
-                  if (hasSubtitle && hasUserRating)
-                    const SizedBox(width: CinearaSpacing.xs),
-
-                  if (hasUserRating)
-                    _UserRatingMark(
-                      value: userRating!,
-                      showLabel: showUserLabel,
-                      onTap: onUserRatingTap,
-                      enableHaptics: enableHaptics,
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-/// User's personal Cineara rating.
-///
-/// This deliberately uses Cineara's accent treatment and lives outside the
-/// artwork so it cannot be confused with external ratings.
-class _UserRatingMark extends StatelessWidget {
-  const _UserRatingMark({
-    required this.value,
-    required this.showLabel,
-    required this.onTap,
-    required this.enableHaptics,
-  });
-
-  final String value;
-  final bool showLabel;
-  final VoidCallback? onTap;
-  final bool enableHaptics;
-
-  void _handleTap() {
-    if (enableHaptics) {
-      HapticFeedback.selectionClick();
-    }
-
-    onTap?.call();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    final Widget content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (showLabel) ...<Widget>[
           Text(
-            'You',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
+            subtitle!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 12,
+              height: 1.2,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(width: 3),
         ],
 
-        Icon(Icons.star_rounded, size: 16, color: theme.colorScheme.primary),
-
-        const SizedBox(width: 2),
-
-        Text(
-          value,
-          style: theme.textTheme.labelMedium?.copyWith(
-            color: theme.colorScheme.primary,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
-    );
-
-    if (onTap == null) {
-      return ExcludeSemantics(child: content);
-    }
-
-    return Semantics(
-      button: true,
-      label: 'Your rating $value. Change rating.',
-      child: ExcludeSemantics(
-        child: InkWell(
-          onTap: _handleTap,
-          borderRadius: BorderRadius.circular(CinearaRadii.pill),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: CinearaSpacing.xxs,
-              vertical: 2,
+        //
+        // SECONDARY METADATA
+        //
+        if (hasSecondarySubtitle) ...<Widget>[
+          const SizedBox(height: CinearaSpacing.xxs),
+          Text(
+            secondarySubtitle!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 11.5,
+              height: 1.2,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.82),
             ),
-            child: content,
           ),
-        ),
-      ),
+        ],
+      ],
     );
   }
 }

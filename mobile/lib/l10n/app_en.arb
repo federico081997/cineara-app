@@ -1,0 +1,151 @@
+{
+  "@@locale": "en",
+  "posterStatusNotStarted": "Not started",
+  "@posterStatusNotStarted": {
+    "description": "Accessibility label for media the user has not started."
+  },
+  "posterStatusWatching": "Watching",
+  "@posterStatusWatching": {
+    "description": "Accessibility label for media the user is currently watching."
+  },
+  "posterStatusCaughtUp": "Caught up",
+  "@posterStatusCaughtUp": {
+    "description": "Accessibility label for episodic media where all currently available episodes have been watched."
+  },
+  "posterStatusCompleted": "Completed",
+  "@posterStatusCompleted": {
+    "description": "Accessibility label for media the user has completely watched."
+  },
+  "posterStatusRewatching": "Rewatching",
+  "@posterStatusRewatching": {
+    "description": "Accessibility label for media the user is currently rewatching."
+  },
+  "posterStatusOnHold": "On hold",
+  "@posterStatusOnHold": {
+    "description": "Accessibility label for media the user has temporarily paused."
+  },
+  "posterStatusDropped": "Dropped",
+  "@posterStatusDropped": {
+    "description": "Accessibility label for media the user has stopped watching."
+  },
+  "posterFavourite": "Favourite",
+  "@posterFavourite": {
+    "description": "Accessibility label indicating that the media is a favourite."
+  },
+  "posterWatchlist": "In watchlist",
+  "@posterWatchlist": {
+    "description": "Accessibility label indicating that the media is in the user's watchlist."
+  },
+  "posterUserRating": "Your rating: {rating}",
+  "@posterUserRating": {
+    "description": "Accessibility label for the user's personal rating of a media item.",
+    "placeholders": {
+      "rating": {
+        "type": "String",
+        "example": "9.5"
+      }
+    }
+  },
+  "posterCollectionCount": "{count, plural, =1{In one collection} other{In {count} collections}}",
+  "@posterCollectionCount": {
+    "description": "Accessibility label describing how many user collections contain the media.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "posterProgress": "{percentage}% watched",
+  "@posterProgress": {
+    "description": "Accessibility label describing viewing progress as a percentage.",
+    "placeholders": {
+      "percentage": {
+        "type": "int",
+        "example": "62"
+      }
+    }
+  },
+  "posterNewContent": "NEW",
+  "@posterNewContent": {
+    "description": "Short visual badge shown for newly available media or episodes."
+  },
+  "posterNewRelease": "New release",
+  "@posterNewRelease": {
+    "description": "Accessibility description for a newly released media item."
+  },
+  "posterNewEpisodesAvailable": "New episodes available",
+  "@posterNewEpisodesAvailable": {
+    "description": "Accessibility description used when new episodes are available but their count is unknown."
+  },
+  "posterNewEpisodeCount": "{count, plural, =1{One new episode available} other{{count} new episodes available}}",
+  "@posterNewEpisodeCount": {
+    "description": "Accessibility description for the number of newly available episodes.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "posterAddToWatchlist": "Add {title} to watchlist",
+  "@posterAddToWatchlist": {
+    "description": "Accessibility label for the quick action that adds media to the watchlist.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterRemoveFromWatchlist": "Remove {title} from watchlist",
+  "@posterRemoveFromWatchlist": {
+    "description": "Accessibility label for the quick action that removes media from the watchlist.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterAddToFavourites": "Add {title} to favourites",
+  "@posterAddToFavourites": {
+    "description": "Accessibility label for the quick action that adds media to favourites.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterRemoveFromFavourites": "Remove {title} from favourites",
+  "@posterRemoveFromFavourites": {
+    "description": "Accessibility label for the quick action that removes media from favourites.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterMarkAsWatched": "Mark {title} as watched",
+  "@posterMarkAsWatched": {
+    "description": "Accessibility label for the quick action that marks media as watched.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterMarkAsUnwatched": "Mark {title} as unwatched",
+  "@posterMarkAsUnwatched": {
+    "description": "Accessibility label for the quick action that marks media as unwatched.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  }
+}

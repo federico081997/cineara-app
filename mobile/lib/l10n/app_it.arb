@@ -1,0 +1,151 @@
+{
+  "@@locale": "it",
+  "posterStatusNotStarted": "Non iniziato",
+  "@posterStatusNotStarted": {
+    "description": "Stato di un titolo che l'utente non ha ancora iniziato."
+  },
+  "posterStatusWatching": "In visione",
+  "@posterStatusWatching": {
+    "description": "Stato di un titolo che l'utente sta guardando."
+  },
+  "posterStatusCaughtUp": "In pari",
+  "@posterStatusCaughtUp": {
+    "description": "Stato di una serie di cui l'utente ha visto tutti gli episodi attualmente disponibili."
+  },
+  "posterStatusCompleted": "Completato",
+  "@posterStatusCompleted": {
+    "description": "Stato di un titolo che l'utente ha terminato."
+  },
+  "posterStatusRewatching": "Di nuovo in visione",
+  "@posterStatusRewatching": {
+    "description": "Stato di un titolo che l'utente sta guardando nuovamente."
+  },
+  "posterStatusOnHold": "In pausa",
+  "@posterStatusOnHold": {
+    "description": "Stato di un titolo che l'utente ha messo temporaneamente in pausa."
+  },
+  "posterStatusDropped": "Abbandonato",
+  "@posterStatusDropped": {
+    "description": "Stato di un titolo che l'utente ha deciso di non continuare."
+  },
+  "posterFavourite": "Nei preferiti",
+  "@posterFavourite": {
+    "description": "Indica che il titolo è stato aggiunto ai preferiti."
+  },
+  "posterWatchlist": "Da vedere",
+  "@posterWatchlist": {
+    "description": "Indica che il titolo è stato aggiunto alla lista dei contenuti da vedere."
+  },
+  "posterUserRating": "La tua valutazione: {rating}",
+  "@posterUserRating": {
+    "description": "Valutazione personale assegnata dall'utente al titolo.",
+    "placeholders": {
+      "rating": {
+        "type": "String",
+        "example": "9.5"
+      }
+    }
+  },
+  "posterCollectionCount": "{count, plural, =1{In una collezione} other{In {count} collezioni}}",
+  "@posterCollectionCount": {
+    "description": "Indica in quante collezioni dell'utente è presente il titolo.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "posterProgress": "Avanzamento: {percentage}%",
+  "@posterProgress": {
+    "description": "Indica la percentuale di avanzamento nella visione del titolo.",
+    "placeholders": {
+      "percentage": {
+        "type": "int",
+        "example": "62"
+      }
+    }
+  },
+  "posterNewContent": "NOVITÀ",
+  "@posterNewContent": {
+    "description": "Etichetta breve mostrata quando è disponibile un nuovo titolo o nuovo contenuto."
+  },
+  "posterNewRelease": "Nuova uscita",
+  "@posterNewRelease": {
+    "description": "Indica che il titolo è una nuova uscita."
+  },
+  "posterNewEpisodesAvailable": "Nuovi episodi disponibili",
+  "@posterNewEpisodesAvailable": {
+    "description": "Indica che sono disponibili nuovi episodi quando il numero esatto non è noto."
+  },
+  "posterNewEpisodeCount": "{count, plural, =1{Un nuovo episodio disponibile} other{{count} nuovi episodi disponibili}}",
+  "@posterNewEpisodeCount": {
+    "description": "Indica il numero di nuovi episodi disponibili.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "posterAddToWatchlist": "Aggiungi {title} ai titoli da vedere",
+  "@posterAddToWatchlist": {
+    "description": "Azione che aggiunge un titolo alla lista dei contenuti da vedere.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterRemoveFromWatchlist": "Rimuovi {title} dai titoli da vedere",
+  "@posterRemoveFromWatchlist": {
+    "description": "Azione che rimuove un titolo dalla lista dei contenuti da vedere.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterAddToFavourites": "Aggiungi {title} ai preferiti",
+  "@posterAddToFavourites": {
+    "description": "Azione che aggiunge un titolo ai preferiti.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterRemoveFromFavourites": "Rimuovi {title} dai preferiti",
+  "@posterRemoveFromFavourites": {
+    "description": "Azione che rimuove un titolo dai preferiti.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterMarkAsWatched": "Segna {title} come visto",
+  "@posterMarkAsWatched": {
+    "description": "Azione che contrassegna un titolo come già visto.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterMarkAsUnwatched": "Segna {title} come non visto",
+  "@posterMarkAsUnwatched": {
+    "description": "Azione che rimuove lo stato di già visto da un titolo.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  }
+}
