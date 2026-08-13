@@ -12,6 +12,8 @@ class CinearaThemeExtension extends ThemeExtension<CinearaThemeExtension> {
     required this.skeletonHighlight,
     required this.progressTrack,
     required this.posterPlaceholder,
+    required this.artworkOverlaySurface,
+    required this.artworkOverlayOutline,
   });
 
   final Color heroOverlay;
@@ -20,6 +22,15 @@ class CinearaThemeExtension extends ThemeExtension<CinearaThemeExtension> {
   final Color progressTrack;
   final Color posterPlaceholder;
 
+  /// Neutral surface used by controls displayed over unpredictable artwork.
+  ///
+  /// Examples include external-rating pills, personal-rating pills, and
+  /// passive status docks.
+  final Color artworkOverlaySurface;
+
+  /// Outline used around neutral controls displayed over artwork.
+  final Color artworkOverlayOutline;
+
   @override
   CinearaThemeExtension copyWith({
     Color? heroOverlay,
@@ -27,6 +38,8 @@ class CinearaThemeExtension extends ThemeExtension<CinearaThemeExtension> {
     Color? skeletonHighlight,
     Color? progressTrack,
     Color? posterPlaceholder,
+    Color? artworkOverlaySurface,
+    Color? artworkOverlayOutline,
   }) {
     return CinearaThemeExtension(
       heroOverlay: heroOverlay ?? this.heroOverlay,
@@ -34,6 +47,10 @@ class CinearaThemeExtension extends ThemeExtension<CinearaThemeExtension> {
       skeletonHighlight: skeletonHighlight ?? this.skeletonHighlight,
       progressTrack: progressTrack ?? this.progressTrack,
       posterPlaceholder: posterPlaceholder ?? this.posterPlaceholder,
+      artworkOverlaySurface:
+          artworkOverlaySurface ?? this.artworkOverlaySurface,
+      artworkOverlayOutline:
+          artworkOverlayOutline ?? this.artworkOverlayOutline,
     );
   }
 
@@ -55,6 +72,16 @@ class CinearaThemeExtension extends ThemeExtension<CinearaThemeExtension> {
       posterPlaceholder: Color.lerp(
         posterPlaceholder,
         other.posterPlaceholder,
+        t,
+      )!,
+      artworkOverlaySurface: Color.lerp(
+        artworkOverlaySurface,
+        other.artworkOverlaySurface,
+        t,
+      )!,
+      artworkOverlayOutline: Color.lerp(
+        artworkOverlayOutline,
+        other.artworkOverlayOutline,
         t,
       )!,
     );

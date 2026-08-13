@@ -22,9 +22,10 @@ import 'theme_extensions.dart';
 /// - feedback components;
 /// - Cineara-specific semantic colours through [CinearaThemeExtension].
 ///
-/// The light theme preserves the same visual hierarchy, component dimensions,
-/// spacing, radii and typography as the dark theme. Only semantic colours,
-/// shadows and surface treatments differ.
+/// The light theme preserves the same component dimensions, spacing, radii and
+/// typography as the other Cineara themes. Its visual identity is a cool,
+/// luminous lavender-neutral hierarchy with restrained purple, blue and pink
+/// brand accents.
 ///
 /// Feature widgets should generally obtain visual values from:
 ///
@@ -36,6 +37,47 @@ import 'theme_extensions.dart';
 /// Cineara-specific semantic values that are not represented by Material's
 /// standard colour roles are available through [CinearaThemeExtension].
 abstract final class CinearaLightTheme {
+  // ===========================================================================
+  // Light semantic palette
+  //
+  // The standard light theme uses a cool lavender-neutral surface hierarchy.
+  // Purple remains the primary Cineara identity, while blue and pink stay as
+  // secondary/tertiary brand accents.
+  // ===========================================================================
+
+  static const Color _background = Color(0xFFF8F5FD);
+  static const Color _surface = Color(0xFFFFFEFF);
+  static const Color _surfaceElevated = Color(0xFFF4EFFB);
+  static const Color _surfaceHigh = Color(0xFFEEE7F7);
+  static const Color _surfaceHighest = Color(0xFFE6DDF2);
+
+  static const Color _outline = Color(0xFFD8CCE6);
+  static const Color _outlineStrong = Color(0xFFC7B7D8);
+
+  static const Color _textPrimary = Color(0xFF211A29);
+  static const Color _textSecondary = Color(0xFF665B70);
+  static const Color _textDisabled = Color(0xFF9C92A5);
+
+  static const Color _artworkOverlaySurface = Color(0xB8000000);
+  static const Color _artworkOverlayOutline = Color(0x47FFFFFF);
+
+  static const Color _primary = CinearaColours.brand600;
+  static const Color _primaryMid = CinearaColours.brand500;
+  static const Color _primaryStrong = CinearaColours.brand700;
+  static const Color _onPrimary = CinearaColours.neutral0;
+
+  static const Color _primaryContainer = Color(0xFFEEDFFC);
+  static const Color _primaryContainerSoft = Color(0xFFF6EEFC);
+  static const Color _onPrimaryContainer = CinearaColours.brand900;
+
+  static const Color _secondary = CinearaColours.logoBlue;
+  static const Color _secondaryContainer = Color(0xFFE8ECFF);
+  static const Color _onSecondaryContainer = Color(0xFF202A54);
+
+  static const Color _tertiary = CinearaColours.logoPink;
+  static const Color _tertiaryContainer = Color(0xFFFCE6F4);
+  static const Color _onTertiaryContainer = Color(0xFF501B3C);
+
   /// Complete light theme used by Cineara.
   static ThemeData get theme {
     final ColorScheme colorScheme = _colorScheme;
@@ -54,11 +96,11 @@ abstract final class CinearaLightTheme {
       // -----------------------------------------------------------------------
       // Application surfaces
       // -----------------------------------------------------------------------
-      scaffoldBackgroundColor: CinearaColours.lightBackground,
-      canvasColor: CinearaColours.lightBackground,
-      cardColor: CinearaColours.lightSurface,
-      dividerColor: CinearaColours.lightOutline,
-      disabledColor: CinearaColours.lightTextDisabled,
+      scaffoldBackgroundColor: _background,
+      canvasColor: _background,
+      cardColor: _surface,
+      dividerColor: _outline,
+      disabledColor: _textDisabled,
 
       // -----------------------------------------------------------------------
       // Typography
@@ -68,32 +110,23 @@ abstract final class CinearaLightTheme {
       // -----------------------------------------------------------------------
       // Icons
       // -----------------------------------------------------------------------
-      iconTheme: const IconThemeData(
-        color: CinearaColours.lightTextSecondary,
-        size: 24,
-      ),
+      iconTheme: const IconThemeData(color: _textSecondary, size: 24),
 
       // -----------------------------------------------------------------------
       // App bar
       // -----------------------------------------------------------------------
       appBarTheme: const AppBarThemeData(
-        backgroundColor: CinearaColours.lightBackground,
-        foregroundColor: CinearaColours.lightTextPrimary,
+        backgroundColor: _background,
+        foregroundColor: _textPrimary,
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        iconTheme: IconThemeData(
-          color: CinearaColours.lightTextPrimary,
-          size: 24,
-        ),
-        actionsIconTheme: IconThemeData(
-          color: CinearaColours.lightTextPrimary,
-          size: 24,
-        ),
+        iconTheme: IconThemeData(color: _textPrimary, size: 24),
+        actionsIconTheme: IconThemeData(color: _textPrimary, size: 24),
         titleTextStyle: TextStyle(
-          color: CinearaColours.lightTextPrimary,
+          color: _textPrimary,
           fontSize: CinearaFontSizes.titleSmall,
           fontWeight: FontWeight.w600,
           height: 1.25,
@@ -104,9 +137,9 @@ abstract final class CinearaLightTheme {
       // Cards
       // -----------------------------------------------------------------------
       cardTheme: CardThemeData(
-        color: CinearaColours.lightSurface,
+        color: _surface,
         surfaceTintColor: Colors.transparent,
-        shadowColor: Colors.black.withValues(alpha: 0.10),
+        shadowColor: CinearaColours.brand900.withValues(alpha: 0.08),
         elevation: 1,
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
@@ -121,9 +154,9 @@ abstract final class CinearaLightTheme {
       navigationBarTheme: NavigationBarThemeData(
         height: 72,
         elevation: 0,
-        backgroundColor: CinearaColours.lightSurface,
+        backgroundColor: _surface,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: CinearaColours.brand50,
+        indicatorColor: _primaryContainerSoft,
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.lg),
         ),
@@ -131,30 +164,24 @@ abstract final class CinearaLightTheme {
           Set<WidgetState> states,
         ) {
           if (states.contains(WidgetState.selected)) {
-            return const IconThemeData(
-              color: CinearaColours.brand700,
-              size: 24,
-            );
+            return const IconThemeData(color: _primaryStrong, size: 24);
           }
 
-          return const IconThemeData(
-            color: CinearaColours.lightTextSecondary,
-            size: 24,
-          );
+          return const IconThemeData(color: _textSecondary, size: 24);
         }),
         labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
           Set<WidgetState> states,
         ) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(
-              color: CinearaColours.brand700,
+              color: _primaryStrong,
               fontSize: CinearaFontSizes.labelMedium,
               fontWeight: FontWeight.w600,
             );
           }
 
           return const TextStyle(
-            color: CinearaColours.lightTextSecondary,
+            color: _textSecondary,
             fontSize: CinearaFontSizes.labelMedium,
             fontWeight: FontWeight.w500,
           );
@@ -165,30 +192,27 @@ abstract final class CinearaLightTheme {
       // Tablet navigation rail
       // -----------------------------------------------------------------------
       navigationRailTheme: NavigationRailThemeData(
-        backgroundColor: CinearaColours.lightSurface,
+        backgroundColor: _surface,
         elevation: 0,
         useIndicator: true,
-        indicatorColor: CinearaColours.brand50,
+        indicatorColor: _primaryContainerSoft,
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.lg),
         ),
         minWidth: 80,
         minExtendedWidth: 220,
-        selectedIconTheme: const IconThemeData(
-          color: CinearaColours.brand700,
-          size: 24,
-        ),
+        selectedIconTheme: const IconThemeData(color: _primaryStrong, size: 24),
         unselectedIconTheme: const IconThemeData(
-          color: CinearaColours.lightTextSecondary,
+          color: _textSecondary,
           size: 24,
         ),
         selectedLabelTextStyle: const TextStyle(
-          color: CinearaColours.brand700,
+          color: _primaryStrong,
           fontSize: CinearaFontSizes.bodySmall,
           fontWeight: FontWeight.w600,
         ),
         unselectedLabelTextStyle: const TextStyle(
-          color: CinearaColours.lightTextSecondary,
+          color: _textSecondary,
           fontSize: CinearaFontSizes.bodySmall,
           fontWeight: FontWeight.w500,
         ),
@@ -198,11 +222,11 @@ abstract final class CinearaLightTheme {
       // Internal tab bars
       // -----------------------------------------------------------------------
       tabBarTheme: TabBarThemeData(
-        indicatorColor: CinearaColours.brand600,
+        indicatorColor: _primary,
         indicatorSize: TabBarIndicatorSize.label,
-        dividerColor: CinearaColours.lightOutline,
-        labelColor: CinearaColours.lightTextPrimary,
-        unselectedLabelColor: CinearaColours.lightTextSecondary,
+        dividerColor: _outline,
+        labelColor: _textPrimary,
+        unselectedLabelColor: _textSecondary,
         labelPadding: const EdgeInsets.symmetric(horizontal: CinearaSpacing.md),
         splashBorderRadius: BorderRadius.circular(CinearaRadii.md),
         labelStyle: const TextStyle(
@@ -220,48 +244,45 @@ abstract final class CinearaLightTheme {
       // -----------------------------------------------------------------------
       inputDecorationTheme: InputDecorationThemeData(
         filled: true,
-        fillColor: CinearaColours.lightSurfaceElevated,
+        fillColor: _surfaceElevated,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: CinearaSpacing.md,
           vertical: CinearaSpacing.sm,
         ),
         hintStyle: const TextStyle(
-          color: CinearaColours.lightTextDisabled,
+          color: _textDisabled,
           fontSize: CinearaFontSizes.bodySmall,
         ),
         labelStyle: const TextStyle(
-          color: CinearaColours.lightTextSecondary,
+          color: _textSecondary,
           fontSize: CinearaFontSizes.bodySmall,
         ),
         floatingLabelStyle: const TextStyle(
-          color: CinearaColours.brand700,
+          color: _primaryStrong,
           fontSize: CinearaFontSizes.bodySmall,
           fontWeight: FontWeight.w500,
         ),
         helperStyle: const TextStyle(
-          color: CinearaColours.lightTextSecondary,
+          color: _textSecondary,
           fontSize: CinearaFontSizes.labelMedium,
         ),
         errorStyle: const TextStyle(
           color: CinearaColours.error,
           fontSize: CinearaFontSizes.labelMedium,
         ),
-        prefixIconColor: CinearaColours.lightTextSecondary,
-        suffixIconColor: CinearaColours.lightTextSecondary,
+        prefixIconColor: _textSecondary,
+        suffixIconColor: _textSecondary,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.md),
-          borderSide: const BorderSide(color: CinearaColours.lightOutline),
+          borderSide: const BorderSide(color: _outline),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.md),
-          borderSide: const BorderSide(color: CinearaColours.lightOutline),
+          borderSide: const BorderSide(color: _outline),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.md),
-          borderSide: const BorderSide(
-            color: CinearaColours.brand600,
-            width: 1.5,
-          ),
+          borderSide: const BorderSide(color: _primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.md),
@@ -273,7 +294,7 @@ abstract final class CinearaLightTheme {
         ),
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.md),
-          borderSide: const BorderSide(color: CinearaColours.neutral200),
+          borderSide: const BorderSide(color: _surfaceHighest),
         ),
       ),
 
@@ -293,23 +314,23 @@ abstract final class CinearaLightTheme {
             Set<WidgetState> states,
           ) {
             if (states.contains(WidgetState.disabled)) {
-              return CinearaColours.neutral200;
+              return _surfaceHighest;
             }
 
             if (states.contains(WidgetState.pressed)) {
-              return CinearaColours.brand700;
+              return _primaryStrong;
             }
 
-            return CinearaColours.primary;
+            return _primary;
           }),
           foregroundColor: WidgetStateProperty.resolveWith<Color?>((
             Set<WidgetState> states,
           ) {
             if (states.contains(WidgetState.disabled)) {
-              return CinearaColours.lightTextDisabled;
+              return _textDisabled;
             }
 
-            return CinearaColours.onPrimary;
+            return _onPrimary;
           }),
           overlayColor: WidgetStatePropertyAll<Color>(
             CinearaColours.neutral0.withValues(alpha: 0.10),
@@ -345,23 +366,23 @@ abstract final class CinearaLightTheme {
             Set<WidgetState> states,
           ) {
             if (states.contains(WidgetState.disabled)) {
-              return CinearaColours.lightTextDisabled;
+              return _textDisabled;
             }
 
-            return CinearaColours.brand700;
+            return _primaryStrong;
           }),
           side: WidgetStateProperty.resolveWith<BorderSide>((
             Set<WidgetState> states,
           ) {
             if (states.contains(WidgetState.disabled)) {
-              return const BorderSide(color: CinearaColours.neutral200);
+              return const BorderSide(color: _surfaceHighest);
             }
 
             if (states.contains(WidgetState.pressed)) {
-              return const BorderSide(color: CinearaColours.brand700);
+              return const BorderSide(color: _primaryStrong);
             }
 
-            return const BorderSide(color: CinearaColours.brand500);
+            return const BorderSide(color: _primaryMid);
           }),
           textStyle: const WidgetStatePropertyAll<TextStyle>(
             TextStyle(
@@ -386,10 +407,10 @@ abstract final class CinearaLightTheme {
             Set<WidgetState> states,
           ) {
             if (states.contains(WidgetState.disabled)) {
-              return CinearaColours.lightTextDisabled;
+              return _textDisabled;
             }
 
-            return CinearaColours.brand700;
+            return _primaryStrong;
           }),
           padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
             EdgeInsets.symmetric(
@@ -420,17 +441,17 @@ abstract final class CinearaLightTheme {
             Set<WidgetState> states,
           ) {
             if (states.contains(WidgetState.disabled)) {
-              return CinearaColours.lightTextDisabled;
+              return _textDisabled;
             }
 
             if (states.contains(WidgetState.selected)) {
-              return CinearaColours.brand700;
+              return _primaryStrong;
             }
 
-            return CinearaColours.lightTextSecondary;
+            return _textSecondary;
           }),
           overlayColor: WidgetStatePropertyAll<Color>(
-            CinearaColours.brand500.withValues(alpha: 0.08),
+            _primaryMid.withValues(alpha: 0.08),
           ),
         ),
       ),
@@ -439,10 +460,10 @@ abstract final class CinearaLightTheme {
       // Chips
       // -----------------------------------------------------------------------
       chipTheme: ChipThemeData(
-        backgroundColor: CinearaColours.lightSurfaceElevated,
-        selectedColor: CinearaColours.brand50,
-        disabledColor: CinearaColours.neutral100,
-        side: const BorderSide(color: CinearaColours.lightOutline),
+        backgroundColor: _surfaceElevated,
+        selectedColor: _primaryContainerSoft,
+        disabledColor: _surfaceHigh,
+        side: const BorderSide(color: _outline),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.pill),
         ),
@@ -451,20 +472,17 @@ abstract final class CinearaLightTheme {
           vertical: CinearaSpacing.xxs,
         ),
         labelStyle: const TextStyle(
-          color: CinearaColours.lightTextPrimary,
+          color: _textPrimary,
           fontSize: CinearaFontSizes.bodySmall,
           fontWeight: FontWeight.w500,
         ),
         secondaryLabelStyle: const TextStyle(
-          color: CinearaColours.brand700,
+          color: _primaryStrong,
           fontSize: CinearaFontSizes.bodySmall,
           fontWeight: FontWeight.w600,
         ),
-        iconTheme: const IconThemeData(
-          color: CinearaColours.lightTextSecondary,
-          size: 18,
-        ),
-        checkmarkColor: CinearaColours.brand700,
+        iconTheme: const IconThemeData(color: _textSecondary, size: 18),
+        checkmarkColor: _primaryStrong,
       ),
 
       // -----------------------------------------------------------------------
@@ -472,10 +490,10 @@ abstract final class CinearaLightTheme {
       // -----------------------------------------------------------------------
       listTileTheme: ListTileThemeData(
         tileColor: Colors.transparent,
-        selectedTileColor: CinearaColours.brand50,
-        textColor: CinearaColours.lightTextPrimary,
-        selectedColor: CinearaColours.brand700,
-        iconColor: CinearaColours.lightTextSecondary,
+        selectedTileColor: _primaryContainerSoft,
+        textColor: _textPrimary,
+        selectedColor: _primaryStrong,
+        iconColor: _textSecondary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.md),
         ),
@@ -484,12 +502,12 @@ abstract final class CinearaLightTheme {
           vertical: CinearaSpacing.xxs,
         ),
         titleTextStyle: const TextStyle(
-          color: CinearaColours.lightTextPrimary,
+          color: _textPrimary,
           fontSize: CinearaFontSizes.bodyMedium,
           fontWeight: FontWeight.w500,
         ),
         subtitleTextStyle: const TextStyle(
-          color: CinearaColours.lightTextSecondary,
+          color: _textSecondary,
           fontSize: CinearaFontSizes.bodySmall,
           fontWeight: FontWeight.w400,
         ),
@@ -499,7 +517,7 @@ abstract final class CinearaLightTheme {
       // Dividers
       // -----------------------------------------------------------------------
       dividerTheme: const DividerThemeData(
-        color: CinearaColours.lightOutline,
+        color: _outline,
         thickness: 1,
         space: 1,
       ),
@@ -508,19 +526,19 @@ abstract final class CinearaLightTheme {
       // Progress indicators
       // -----------------------------------------------------------------------
       progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: CinearaColours.brand600,
-        linearTrackColor: CinearaColours.lightOutline,
-        circularTrackColor: CinearaColours.lightOutline,
+        color: _primary,
+        linearTrackColor: _outline,
+        circularTrackColor: _outline,
       ),
 
       // -----------------------------------------------------------------------
       // Sliders
       // -----------------------------------------------------------------------
       sliderTheme: SliderThemeData(
-        activeTrackColor: CinearaColours.brand600,
-        inactiveTrackColor: CinearaColours.lightOutline,
-        thumbColor: CinearaColours.brand500,
-        overlayColor: CinearaColours.brand500.withValues(alpha: 0.12),
+        activeTrackColor: _primary,
+        inactiveTrackColor: _outline,
+        thumbColor: _primaryMid,
+        overlayColor: _primaryMid.withValues(alpha: 0.12),
         valueIndicatorColor: CinearaColours.darkSurface,
         valueIndicatorTextStyle: const TextStyle(
           color: CinearaColours.darkTextPrimary,
@@ -537,27 +555,27 @@ abstract final class CinearaLightTheme {
           Set<WidgetState> states,
         ) {
           if (states.contains(WidgetState.disabled)) {
-            return CinearaColours.lightTextDisabled;
+            return _textDisabled;
           }
 
           if (states.contains(WidgetState.selected)) {
             return CinearaColours.neutral0;
           }
 
-          return CinearaColours.lightTextSecondary;
+          return _textSecondary;
         }),
         trackColor: WidgetStateProperty.resolveWith<Color?>((
           Set<WidgetState> states,
         ) {
           if (states.contains(WidgetState.disabled)) {
-            return CinearaColours.neutral200;
+            return _surfaceHighest;
           }
 
           if (states.contains(WidgetState.selected)) {
-            return CinearaColours.brand600;
+            return _primary;
           }
 
-          return CinearaColours.lightOutline;
+          return _outline;
         }),
       ),
 
@@ -569,19 +587,17 @@ abstract final class CinearaLightTheme {
           Set<WidgetState> states,
         ) {
           if (states.contains(WidgetState.disabled)) {
-            return CinearaColours.neutral200;
+            return _surfaceHighest;
           }
 
           if (states.contains(WidgetState.selected)) {
-            return CinearaColours.primary;
+            return _primary;
           }
 
           return Colors.transparent;
         }),
-        checkColor: const WidgetStatePropertyAll<Color>(
-          CinearaColours.onPrimary,
-        ),
-        side: const BorderSide(color: CinearaColours.lightTextSecondary),
+        checkColor: const WidgetStatePropertyAll<Color>(_onPrimary),
+        side: const BorderSide(color: _textSecondary),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.xs),
         ),
@@ -595,14 +611,14 @@ abstract final class CinearaLightTheme {
           Set<WidgetState> states,
         ) {
           if (states.contains(WidgetState.disabled)) {
-            return CinearaColours.lightTextDisabled;
+            return _textDisabled;
           }
 
           if (states.contains(WidgetState.selected)) {
-            return CinearaColours.brand600;
+            return _primary;
           }
 
-          return CinearaColours.lightTextSecondary;
+          return _textSecondary;
         }),
       ),
 
@@ -610,21 +626,21 @@ abstract final class CinearaLightTheme {
       // Dialogs
       // -----------------------------------------------------------------------
       dialogTheme: DialogThemeData(
-        backgroundColor: CinearaColours.lightSurface,
+        backgroundColor: _surface,
         surfaceTintColor: Colors.transparent,
         elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: 0.15),
+        shadowColor: CinearaColours.brand900.withValues(alpha: 0.12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CinearaRadii.xl),
         ),
         titleTextStyle: const TextStyle(
-          color: CinearaColours.lightTextPrimary,
+          color: _textPrimary,
           fontSize: CinearaFontSizes.titleSmall,
           fontWeight: FontWeight.w600,
           height: 1.3,
         ),
         contentTextStyle: const TextStyle(
-          color: CinearaColours.lightTextSecondary,
+          color: _textSecondary,
           fontSize: CinearaFontSizes.bodyMedium,
           fontWeight: FontWeight.w400,
           height: 1.5,
@@ -635,13 +651,13 @@ abstract final class CinearaLightTheme {
       // Bottom sheets
       // -----------------------------------------------------------------------
       bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: CinearaColours.lightSurface,
-        modalBackgroundColor: CinearaColours.lightSurface,
+        backgroundColor: _surface,
+        modalBackgroundColor: _surface,
         surfaceTintColor: Colors.transparent,
         elevation: 8,
         modalElevation: 8,
         showDragHandle: true,
-        dragHandleColor: CinearaColours.lightTextDisabled,
+        dragHandleColor: _textDisabled,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
             top: Radius.circular(CinearaRadii.xl),
@@ -697,9 +713,9 @@ abstract final class CinearaLightTheme {
       // Text selection
       // -----------------------------------------------------------------------
       textSelectionTheme: TextSelectionThemeData(
-        cursorColor: CinearaColours.brand600,
+        cursorColor: _primary,
         selectionColor: CinearaColours.brand300.withValues(alpha: 0.30),
-        selectionHandleColor: CinearaColours.brand600,
+        selectionHandleColor: _primary,
       ),
 
       // -----------------------------------------------------------------------
@@ -708,10 +724,12 @@ abstract final class CinearaLightTheme {
       extensions: const <ThemeExtension<dynamic>>[
         CinearaThemeExtension(
           heroOverlay: CinearaColours.heroOverlay,
-          skeletonBase: CinearaColours.neutral100,
-          skeletonHighlight: CinearaColours.neutral50,
-          progressTrack: CinearaColours.lightOutline,
-          posterPlaceholder: CinearaColours.lightSurfaceElevated,
+          skeletonBase: _surfaceHigh,
+          skeletonHighlight: _surface,
+          progressTrack: _outline,
+          posterPlaceholder: _surfaceElevated,
+          artworkOverlaySurface: _artworkOverlaySurface,
+          artworkOverlayOutline: _artworkOverlayOutline,
         ),
       ],
     );
@@ -727,36 +745,36 @@ abstract final class CinearaLightTheme {
     // -------------------------------------------------------------------------
     // Primary
     // -------------------------------------------------------------------------
-    primary: CinearaColours.primary,
-    onPrimary: CinearaColours.onPrimary,
-    primaryContainer: CinearaColours.primaryContainer,
-    onPrimaryContainer: CinearaColours.onPrimaryContainer,
+    primary: _primary,
+    onPrimary: _onPrimary,
+    primaryContainer: _primaryContainer,
+    onPrimaryContainer: _onPrimaryContainer,
 
     // -------------------------------------------------------------------------
     // Secondary
     //
     // Cineara's blue logo accent remains the secondary brand accent.
     // -------------------------------------------------------------------------
-    secondary: CinearaColours.logoBlue,
+    secondary: _secondary,
     onSecondary: CinearaColours.neutral0,
-    secondaryContainer: CinearaColours.brand50,
-    onSecondaryContainer: CinearaColours.brand900,
+    secondaryContainer: _secondaryContainer,
+    onSecondaryContainer: _onSecondaryContainer,
 
     // -------------------------------------------------------------------------
     // Tertiary
     //
     // Cineara's pink logo accent remains the tertiary brand accent.
     // -------------------------------------------------------------------------
-    tertiary: CinearaColours.logoPink,
+    tertiary: _tertiary,
     onTertiary: CinearaColours.neutral950,
-    tertiaryContainer: CinearaColours.brand100,
-    onTertiaryContainer: CinearaColours.brand900,
+    tertiaryContainer: _tertiaryContainer,
+    onTertiaryContainer: _onTertiaryContainer,
 
     // -------------------------------------------------------------------------
     // Error
     // -------------------------------------------------------------------------
     error: CinearaColours.error,
-    onError: CinearaColours.neutral950,
+    onError: CinearaColours.neutral0,
 
     // -------------------------------------------------------------------------
     // Surface hierarchy
@@ -766,24 +784,24 @@ abstract final class CinearaLightTheme {
     // lowest  → brightest / least visually raised
     // highest → stronger neutral separation
     // -------------------------------------------------------------------------
-    surface: CinearaColours.lightSurface,
-    onSurface: CinearaColours.lightTextPrimary,
-    onSurfaceVariant: CinearaColours.lightTextSecondary,
+    surface: _surface,
+    onSurface: _textPrimary,
+    onSurfaceVariant: _textSecondary,
 
-    surfaceDim: CinearaColours.neutral100,
-    surfaceBright: CinearaColours.neutral0,
+    surfaceDim: _surfaceHigh,
+    surfaceBright: _surface,
 
     surfaceContainerLowest: CinearaColours.neutral0,
-    surfaceContainerLow: CinearaColours.lightBackground,
-    surfaceContainer: CinearaColours.lightSurfaceElevated,
-    surfaceContainerHigh: CinearaColours.neutral100,
-    surfaceContainerHighest: CinearaColours.neutral200,
+    surfaceContainerLow: _background,
+    surfaceContainer: _surfaceElevated,
+    surfaceContainerHigh: _surfaceHigh,
+    surfaceContainerHighest: _surfaceHighest,
 
     // -------------------------------------------------------------------------
     // Borders
     // -------------------------------------------------------------------------
-    outline: CinearaColours.lightOutline,
-    outlineVariant: CinearaColours.neutral200,
+    outline: _outlineStrong,
+    outlineVariant: _outline,
 
     // -------------------------------------------------------------------------
     // Inverse surfaces
@@ -817,21 +835,21 @@ abstract final class CinearaLightTheme {
     // Display
     // -------------------------------------------------------------------------
     displayLarge: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.display,
       fontWeight: FontWeight.w700,
       height: 1.10,
       letterSpacing: -0.8,
     ),
     displayMedium: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.display,
       fontWeight: FontWeight.w600,
       height: 1.10,
       letterSpacing: -0.6,
     ),
     displaySmall: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.titleLarge,
       fontWeight: FontWeight.w700,
       height: 1.15,
@@ -842,19 +860,19 @@ abstract final class CinearaLightTheme {
     // Headlines
     // -------------------------------------------------------------------------
     headlineLarge: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.titleLarge,
       fontWeight: FontWeight.w700,
       height: 1.20,
     ),
     headlineMedium: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.titleMedium,
       fontWeight: FontWeight.w600,
       height: 1.20,
     ),
     headlineSmall: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.titleSmall,
       fontWeight: FontWeight.w600,
       height: 1.25,
@@ -864,19 +882,19 @@ abstract final class CinearaLightTheme {
     // Titles
     // -------------------------------------------------------------------------
     titleLarge: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.titleMedium,
       fontWeight: FontWeight.w600,
       height: 1.25,
     ),
     titleMedium: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.titleSmall,
       fontWeight: FontWeight.w600,
       height: 1.30,
     ),
     titleSmall: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.bodyLarge,
       fontWeight: FontWeight.w600,
       height: 1.30,
@@ -886,19 +904,19 @@ abstract final class CinearaLightTheme {
     // Body
     // -------------------------------------------------------------------------
     bodyLarge: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.bodyLarge,
       fontWeight: FontWeight.w400,
       height: 1.50,
     ),
     bodyMedium: TextStyle(
-      color: CinearaColours.lightTextSecondary,
+      color: _textSecondary,
       fontSize: CinearaFontSizes.bodyMedium,
       fontWeight: FontWeight.w400,
       height: 1.50,
     ),
     bodySmall: TextStyle(
-      color: CinearaColours.lightTextSecondary,
+      color: _textSecondary,
       fontSize: CinearaFontSizes.bodySmall,
       fontWeight: FontWeight.w400,
       height: 1.45,
@@ -908,22 +926,35 @@ abstract final class CinearaLightTheme {
     // Labels
     // -------------------------------------------------------------------------
     labelLarge: TextStyle(
-      color: CinearaColours.lightTextPrimary,
+      color: _textPrimary,
       fontSize: CinearaFontSizes.bodySmall,
       fontWeight: FontWeight.w600,
       height: 1.30,
     ),
     labelMedium: TextStyle(
-      color: CinearaColours.lightTextSecondary,
+      color: _textSecondary,
       fontSize: CinearaFontSizes.labelMedium,
       fontWeight: FontWeight.w600,
       height: 1.30,
     ),
     labelSmall: TextStyle(
-      color: CinearaColours.lightTextSecondary,
+      color: _textSecondary,
       fontSize: CinearaFontSizes.labelSmall,
       fontWeight: FontWeight.w500,
       height: 1.30,
     ),
+  );
+
+  /// Decorative Cineara gradient for small light-theme accents.
+  ///
+  /// Keep this for branded details rather than generic surfaces.
+  static const LinearGradient accentGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: <Color>[
+      CinearaColours.logoPink,
+      CinearaColours.logoViolet,
+      CinearaColours.logoBlue,
+    ],
   );
 }

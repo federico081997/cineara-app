@@ -211,6 +211,7 @@ class PosterMediaCardLabels {
     required this.collectionCount,
     required this.progress,
     required this.newContent,
+    required this.newContentBadge,
     required this.newContentDescription,
     required this.quickAction,
   });
@@ -251,8 +252,21 @@ class PosterMediaCardLabels {
   /// Builds the localized viewing-progress label.
   final String Function(int percentage) progress;
 
-  /// Short visual label for newly available content.
+  /// Legacy short label for newly available content.
+  ///
+  /// The poster artwork no longer renders a translated NEW word. This field is
+  /// retained so existing localization/controller code does not need to change
+  /// immediately; the complete spoken meaning comes from
+  /// [newContentDescription].
   final String newContent;
+
+  /// Legacy short NEW-content label builder.
+  ///
+  /// Cineara represents every kind of new content with the same compact,
+  /// theme-adaptive corner signature rather than artwork text or a numeric
+  /// badge. Keeping this builder preserves source compatibility with existing
+  /// ARB and controller code.
+  final String Function(PosterNewContentType type, int? count) newContentBadge;
 
   /// Builds the localized description for newly available content.
   final String Function(PosterNewContentType type, int? count)
@@ -472,7 +486,7 @@ class PosterMediaCard extends StatefulWidget {
   /// Whether the passive personal-state dock is shown.
   final bool showStatusDock;
 
-  /// Whether the NEW content marker is shown.
+  /// Whether the single theme-adaptive new-content corner signature is shown.
   final bool showNewContent;
 
   /// Whether interaction haptics are enabled.
@@ -493,6 +507,8 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
 
   bool get _supportsLongPress => widget.onLongPress != null;
 
+  bool get _isInteractive => _isTappable || _supportsLongPress;
+
   bool get _hasNewContent {
     final PosterNewContent? newContent = widget.newContent;
 
@@ -501,7 +517,7 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
     }
 
     return switch (newContent.type) {
-      // A newly released movie, series, season, etc. may always show NEW.
+      // A newly released movie, series, season, etc. may always show the new-content treatment.
       PosterNewContentType.release => true,
 
       // New episodes are relevant once the user has engaged with the title.
@@ -708,8 +724,10 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
 
     if (widget.externalRating case final PosterExternalRating rating
         when widget.showExternalRating) {
+      // Keep the fallback language-neutral. Apps that want a richer spoken
+      // phrase can provide PosterExternalRating.semanticLabel.
       parts.add(
-        rating.semanticLabel ?? '${rating.sourceLabel} rating ${rating.value}',
+        rating.semanticLabel ?? '${rating.sourceLabel}, ${rating.value}',
       );
     }
 
@@ -745,11 +763,13 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
       );
     }
 
-    if (widget.quickAction case final PosterQuickAction quickAction) {
-      if (quickAction.type == PosterQuickActionType.watchlist &&
-          quickAction.isActive) {
-        parts.add(widget.labels.watchlist);
-      }
+    final PosterQuickAction? quickAction = widget.quickAction;
+
+    if (widget.isInWatchlist ||
+        (quickAction != null &&
+            quickAction.type == PosterQuickActionType.watchlist &&
+            quickAction.isActive)) {
+      parts.add(widget.labels.watchlist);
     }
 
     if (_normalisedProgress case final double progress) {
@@ -763,7 +783,7 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
     return parts.join(', ');
   }
 
-  void _handleTapDown(TapDownDetails details) {
+  void _handleTapDown(TapDownDetails _) {
     if (_isPressed) {
       return;
     }
@@ -837,6 +857,8 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
       return;
     }
 
+    _scheduleRelease();
+
     if (widget.enableHaptics) {
       HapticFeedback.mediumImpact();
     }
@@ -846,8 +868,12 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
 
   @override
   Widget build(BuildContext context) {
-    final bool reduceMotion =
-        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final ThemeData theme = Theme.of(context);
+    final MediaQueryData mediaQuery = MediaQuery.of(context);
+
+    final bool reduceMotion = mediaQuery.disableAnimations;
+    final bool boldText = mediaQuery.boldText;
+    final bool highContrast = mediaQuery.highContrast;
 
     final Duration interactionDuration = reduceMotion
         ? Duration.zero
@@ -858,6 +884,10 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
         : const Duration(milliseconds: 90);
 
     final BorderRadius artworkRadius = BorderRadius.circular(CinearaRadii.lg);
+
+    final PosterNewContent? visibleNewContent = _hasNewContent
+        ? widget.newContent
+        : null;
 
     final Widget artwork = _PosterArtwork(
       title: widget.title,
@@ -870,12 +900,13 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
           : const <_PosterStatusItem>[],
       quickAction: widget.quickAction,
       progress: _normalisedProgress,
-      newContent: _hasNewContent ? widget.newContent : null,
-      newContentLabel: widget.labels.newContent,
+      newContent: visibleNewContent,
       labels: widget.labels,
       aspectRatio: widget.aspectRatio,
       enableHaptics: widget.enableHaptics,
       animationDuration: interactionDuration,
+      boldText: boldText,
+      highContrast: highContrast,
     );
 
     final Widget artworkCard = AnimatedScale(
@@ -888,18 +919,18 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
         decoration: BoxDecoration(
           borderRadius: artworkRadius,
 
-          // Soft Cineara outer glow.
+          // Theme-adaptive Cineara interaction glow.
           boxShadow: _isPressed
               ? <BoxShadow>[
                   BoxShadow(
-                    color: CinearaColours.logoViolet.withValues(alpha: 0.28),
-                    blurRadius: 14,
-                    spreadRadius: 1,
+                    color: theme.colorScheme.primary.withValues(alpha: 0.18),
+                    blurRadius: 9,
+                    spreadRadius: 0,
                   ),
                   BoxShadow(
-                    color: CinearaColours.logoBlue.withValues(alpha: 0.10),
-                    blurRadius: 22,
-                    spreadRadius: 2,
+                    color: theme.colorScheme.secondary.withValues(alpha: 0.055),
+                    blurRadius: 13,
+                    spreadRadius: 0,
                   ),
                 ]
               : const <BoxShadow>[],
@@ -915,8 +946,8 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
               InkWell(
                 excludeFromSemantics: true,
                 onTap: widget.onTap == null ? null : _handleTap,
-                onTapDown: _isTappable ? _handleTapDown : null,
-                onTapCancel: _isTappable ? _handleTapCancel : null,
+                onTapDown: _isInteractive ? _handleTapDown : null,
+                onTapCancel: _isInteractive ? _handleTapCancel : null,
                 onLongPress: _supportsLongPress ? _handleLongPress : null,
                 splashFactory: NoSplash.splashFactory,
                 splashColor: Colors.transparent,
@@ -937,19 +968,19 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
                       decoration: BoxDecoration(
                         borderRadius: artworkRadius,
                         border: Border.all(
-                          color: CinearaColours.logoViolet.withValues(
-                            alpha: 0.55,
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: highContrast ? 0.88 : 0.52,
                           ),
-                          width: 1.25,
+                          width: highContrast ? 1.75 : 1.25,
                         ),
                         gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                          begin: AlignmentDirectional.topStart,
+                          end: AlignmentDirectional.bottomEnd,
                           colors: <Color>[
-                            CinearaColours.logoPink.withValues(alpha: 0.10),
-                            CinearaColours.logoViolet.withValues(alpha: 0.055),
+                            theme.colorScheme.tertiary.withValues(alpha: 0.10),
+                            theme.colorScheme.primary.withValues(alpha: 0.055),
                             Colors.transparent,
-                            CinearaColours.logoBlue.withValues(alpha: 0.09),
+                            theme.colorScheme.secondary.withValues(alpha: 0.09),
                           ],
                           stops: const <double>[0.0, 0.30, 0.60, 1.0],
                         ),
@@ -979,6 +1010,8 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
             subtitle: widget.subtitle,
             secondarySubtitle: widget.secondarySubtitle,
             maxTitleLines: widget.maxTitleLines,
+            boldText: boldText,
+            highContrast: highContrast,
           ),
         ],
       ],
@@ -1002,16 +1035,54 @@ class _PosterMediaCardState extends State<PosterMediaCard> {
 /// simply making every element smaller.
 enum _PosterDensity { tiny, compact, regular, spacious }
 
-_PosterDensity _resolveDensity(double width) {
-  if (width < 100) {
+double _effectiveTextScale(BuildContext context) {
+  final TextScaler scaler = MediaQuery.textScalerOf(context);
+
+  // Measuring a representative font size works with both linear and nonlinear
+  // TextScaler implementations without using deprecated textScaleFactor APIs.
+  return scaler.scale(16) / 16;
+}
+
+/// Returns the restrained accessibility scale used by poster overlays.
+///
+/// Artwork overlays live inside fixed poster geometry, so following the full
+/// platform text multiplier would quickly make pills collide with one another.
+/// Cineara therefore applies only part of the requested growth and caps the
+/// result at 20% above the normal size. Titles and metadata outside the artwork
+/// still use the platform's normal text scaling.
+double _overlayTextScale(BuildContext context) {
+  final double textScale = _effectiveTextScale(context);
+
+  // Apply 35% of any requested growth. Examples:
+  // 1.0 system scale -> 1.00 overlay scale
+  // 1.5 system scale -> 1.175 overlay scale
+  // 2.0 system scale -> capped at 1.20
+  final double restrainedScale = 1.0 + ((textScale - 1.0) * 0.35);
+
+  return restrainedScale.clamp(1.0, 1.20).toDouble();
+}
+
+_PosterDensity _resolveDensity({
+  required double width,
+  required double height,
+  required double textScale,
+}) {
+  // Enlarged text consumes the same finite poster surface as the overlays.
+  // Resolve density from an effective width so lower-priority overlay details
+  // disappear before they collide or become unreadable.
+  final double effectiveWidth = width / textScale.clamp(1.0, 1.60).toDouble();
+
+  // Custom artwork ratios can create very shallow cards. In that case width
+  // alone is misleading, so progressively reduce overlay density by height.
+  if (height < 86 || effectiveWidth < 100) {
     return _PosterDensity.tiny;
   }
 
-  if (width < 145) {
+  if (height < 112 || effectiveWidth < 145) {
     return _PosterDensity.compact;
   }
 
-  if (width < 220) {
+  if (height < 150 || effectiveWidth < 220) {
     return _PosterDensity.regular;
   }
 
@@ -1030,11 +1101,12 @@ class _PosterArtwork extends StatelessWidget {
     required this.quickAction,
     required this.progress,
     required this.newContent,
-    required this.newContentLabel,
     required this.labels,
     required this.aspectRatio,
     required this.enableHaptics,
     required this.animationDuration,
+    required this.boldText,
+    required this.highContrast,
   });
 
   /// Media title, also used for accessibility and image fallback content.
@@ -1061,11 +1133,12 @@ class _PosterArtwork extends StatelessWidget {
   /// Viewing progress from 0.0 to 1.0, or null when not shown.
   final double? progress;
 
-  /// Newly available content, or null when the NEW marker is hidden.
+  /// Newly available content, or null when the new-content treatment is hidden.
+  ///
+  /// The visual treatment is language-independent and theme-adaptive. Movies,
+  /// series, and episodic updates all use the same corner signature; the actual
+  /// content type/count remains available through the parent card semantics.
   final PosterNewContent? newContent;
-
-  /// Short localized label used by the NEW marker.
-  final String newContentLabel;
 
   /// Localized labels used by poster controls.
   final PosterMediaCardLabels labels;
@@ -1079,6 +1152,12 @@ class _PosterArtwork extends StatelessWidget {
   /// Duration used by artwork animations and transitions.
   final Duration animationDuration;
 
+  /// Whether the platform has requested bolder text.
+  final bool boldText;
+
+  /// Whether the platform has requested higher visual contrast.
+  final bool highContrast;
+
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
@@ -1088,8 +1167,16 @@ class _PosterArtwork extends StatelessWidget {
           final double width = constraints.hasBoundedWidth
               ? constraints.maxWidth
               : 160;
+          final double height = constraints.hasBoundedHeight
+              ? constraints.maxHeight
+              : width / aspectRatio;
 
-          final _PosterDensity density = _resolveDensity(width);
+          final double textScale = _effectiveTextScale(context);
+          final _PosterDensity density = _resolveDensity(
+            width: width,
+            height: height,
+            textScale: textScale,
+          );
 
           final bool hasWorldIdentity = worldIdentity != null;
           final bool hasNewContent = newContent != null;
@@ -1106,25 +1193,24 @@ class _PosterArtwork extends StatelessWidget {
           // The personal score is lower-priority overlay information. On tiny
           // posters it is removed before core Cineara identity and state.
           final bool canShowUserRating =
-              hasUserRating && density != _PosterDensity.tiny;
+              hasUserRating && density != _PosterDensity.tiny && height >= 110;
 
-          // IMDb/TMDb source names are hidden before the rating itself when
-          // horizontal space becomes limited.
-          final bool showExternalRatingSource =
-              density == _PosterDensity.spacious;
-
-          final int maxVisibleStatuses = switch (density) {
+          final int baseMaxVisibleStatuses = switch (density) {
             _PosterDensity.tiny => 1,
             _PosterDensity.compact => 1,
             _PosterDensity.regular => 2,
             _PosterDensity.spacious => 3,
           };
 
+          final int maxVisibleStatuses = textScale >= 1.80
+              ? 1
+              : baseMaxVisibleStatuses;
+
           final bool canShowStatusDock =
               statusItems.isNotEmpty &&
-              !(density == _PosterDensity.tiny &&
-                  quickAction != null &&
-                  width < 84);
+              height >= 92 &&
+              !(quickAction != null &&
+                  (density == _PosterDensity.tiny || width < 104));
 
           const double overlayInset = CinearaSpacing.xs;
 
@@ -1133,18 +1219,6 @@ class _PosterArtwork extends StatelessWidget {
           final bool hasBottomOverlay =
               canShowUserRating || canShowStatusDock || quickAction != null;
 
-          // NEW belongs to the world-identity side of the poster rather than
-          // the rating side. It therefore only needs to clear the
-          // world-identity chip.
-          final double newBadgeTop = hasWorldIdentity
-              ? switch (density) {
-                  _PosterDensity.tiny => 34,
-                  _PosterDensity.compact => 36,
-                  _PosterDensity.regular => 40,
-                  _PosterDensity.spacious => 42,
-                }
-              : overlayInset;
-
           return Stack(
             fit: StackFit.expand,
             clipBehavior: Clip.hardEdge,
@@ -1152,7 +1226,7 @@ class _PosterArtwork extends StatelessWidget {
               _PosterImage(title: title, imageUrl: imageUrl),
 
               _PosterGradient(
-                showTop: hasTopOverlay || hasNewContent,
+                showTop: hasTopOverlay,
                 showBottom: hasBottomOverlay || progress != null,
               ),
 
@@ -1160,18 +1234,22 @@ class _PosterArtwork extends StatelessWidget {
               // TOP METADATA
               //
               if (hasTopOverlay)
-                Positioned(
+                PositionedDirectional(
                   top: overlayInset,
-                  left: overlayInset,
-                  right: overlayInset,
+                  start: overlayInset,
+                  end: overlayInset,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       if (worldIdentity case final PosterWorldIdentity identity)
                         Expanded(
                           child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: _WorldIdentityChip(identity: identity),
+                            alignment: AlignmentDirectional.centerStart,
+                            child: _WorldIdentityChip(
+                              identity: identity,
+                              boldText: boldText,
+                              highContrast: highContrast,
+                            ),
                           ),
                         )
                       else
@@ -1183,29 +1261,35 @@ class _PosterArtwork extends StatelessWidget {
                       if (canShowExternalRating)
                         _ExternalRatingMark(
                           rating: externalRating!,
-                          showSource: showExternalRatingSource,
+                          boldText: boldText,
+                          highContrast: highContrast,
                         ),
                     ],
                   ),
                 ),
 
               //
-              // NEW CONTENT
+              // NEW CONTENT CORNER SIGNATURE
               //
-              if (hasNewContent)
-                Positioned(
-                  top: newBadgeTop,
-                  right: overlayInset + 2,
-                  child: _NewContentBadge(label: newContentLabel),
+              // Every kind of new content uses exactly the same visual mark.
+              // Release type and episode count remain semantic/domain data and
+              // do not alter the artwork treatment. The mark uses the active
+              // theme's brand colours so it changes naturally with the theme.
+              if (newContent != null)
+                Positioned.fill(
+                  child: _PosterNewContentIndicator(
+                    animationDuration: animationDuration,
+                    highContrast: highContrast,
+                  ),
                 ),
 
               //
               // PERSONAL STATE + QUICK ACTION
               //
               if (hasBottomOverlay)
-                Positioned(
-                  left: overlayInset,
-                  right: overlayInset,
+                PositionedDirectional(
+                  start: overlayInset,
+                  end: overlayInset,
                   bottom: progress != null ? 8 : 6,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -1213,14 +1297,18 @@ class _PosterArtwork extends StatelessWidget {
                       if (canShowUserRating || canShowStatusDock)
                         Expanded(
                           child: Align(
-                            alignment: Alignment.bottomLeft,
+                            alignment: AlignmentDirectional.bottomStart,
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[
                                 // Personal Cineara rating.
                                 if (canShowUserRating)
-                                  _UserRatingMark(value: userRating!),
+                                  _UserRatingMark(
+                                    value: userRating!,
+                                    boldText: boldText,
+                                    highContrast: highContrast,
+                                  ),
 
                                 // Small separation between rating and status
                                 // dock.
@@ -1233,6 +1321,7 @@ class _PosterArtwork extends StatelessWidget {
                                     items: statusItems,
                                     maxVisibleItems: maxVisibleStatuses,
                                     animationDuration: animationDuration,
+                                    highContrast: highContrast,
                                   ),
                               ],
                             ),
@@ -1285,6 +1374,9 @@ class _PosterImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
     final String? resolvedUrl = switch (imageUrl?.trim()) {
       final String value when value.isNotEmpty => value,
       _ => null,
@@ -1320,7 +1412,9 @@ class _PosterImage extends StatelessWidget {
 
                 return AnimatedOpacity(
                   opacity: frame == null ? 0 : 1,
-                  duration: CinearaMotion.standard,
+                  duration: reduceMotion
+                      ? Duration.zero
+                      : CinearaMotion.standard,
                   curve: Curves.easeOut,
                   child: child,
                 );
@@ -1336,7 +1430,12 @@ class _PosterImage extends StatelessWidget {
   }
 }
 
-/// Cineara-branded poster fallback.
+/// Cineara-branded artwork fallback.
+///
+/// The placeholder adapts to the space provided by the parent rather than
+/// assuming a poster aspect ratio. Portrait and square artwork use a vertical
+/// composition, while shallow landscape artwork switches to a horizontal one.
+/// Extremely small containers show only the Cineara artwork mark.
 class _PosterPlaceholder extends StatelessWidget {
   const _PosterPlaceholder({required this.title});
 
@@ -1354,44 +1453,168 @@ class _PosterPlaceholder extends StatelessWidget {
         cinearaTheme?.posterPlaceholder ??
         theme.colorScheme.surfaceContainerHigh;
 
-    return ColoredBox(
-      color: backgroundColor,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(CinearaSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Stack(
-                alignment: Alignment.center,
-                children: <Widget>[
-                  Icon(
-                    Icons.public_rounded,
-                    size: 42,
-                    color: theme.colorScheme.primary.withValues(alpha: 0.72),
-                  ),
-                  Icon(
-                    Icons.play_arrow_rounded,
-                    size: 18,
-                    color: theme.colorScheme.onPrimary,
-                  ),
-                ],
-              ),
-              const SizedBox(height: CinearaSpacing.sm),
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+    return ExcludeSemantics(
+      child: ColoredBox(
+        color: backgroundColor,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final double width = constraints.maxWidth;
+            final double height = constraints.maxHeight;
+
+            // Nothing useful can be rendered without finite positive space.
+            if (!width.isFinite ||
+                !height.isFinite ||
+                width <= 0 ||
+                height <= 0) {
+              return const SizedBox.shrink();
+            }
+
+            final double shortestSide = width < height ? width : height;
+            final double textScale = _effectiveTextScale(context);
+
+            final double aspectRatio = width / height;
+
+            // Landscape artwork benefits from placing the title beside the mark
+            // instead of stacking everything vertically.
+            final bool useHorizontalLayout =
+                aspectRatio >= 1.25 && height < 150;
+
+            // Very small cards cannot carry useful text without creating visual
+            // noise or risking overflow.
+            final bool showTitle =
+                shortestSide >= (64 * textScale.clamp(1.0, 1.40)) &&
+                height >= (56 * textScale.clamp(1.0, 1.40)) &&
+                !(textScale >= 1.80 && shortestSide < 180);
+
+            final int placeholderTitleLines = textScale >= 1.30 ? 3 : 2;
+
+            final double iconSize = (shortestSide * 0.34)
+                .clamp(22.0, 42.0)
+                .toDouble();
+
+            final double playIconSize = (iconSize * 0.43)
+                .clamp(10.0, 18.0)
+                .toDouble();
+
+            final double outerPadding = (shortestSide * 0.12)
+                .clamp(CinearaSpacing.xs, CinearaSpacing.lg)
+                .toDouble();
+
+            final double spacing = (shortestSide * 0.08)
+                .clamp(CinearaSpacing.xxs, CinearaSpacing.sm)
+                .toDouble();
+
+            final Widget artworkMark = _PosterPlaceholderMark(
+              globeSize: iconSize,
+              playSize: playIconSize,
+            );
+
+            if (!showTitle) {
+              return Center(child: artworkMark);
+            }
+
+            if (useHorizontalLayout) {
+              return Padding(
+                padding: EdgeInsets.all(outerPadding),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    artworkMark,
+
+                    SizedBox(width: spacing),
+
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: placeholderTitleLines,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.start,
+                        textHeightBehavior: const TextHeightBehavior(
+                          applyHeightToFirstAscent: true,
+                          applyHeightToLastDescent: true,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                          height: 1.28,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.all(outerPadding),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    artworkMark,
+
+                    SizedBox(height: spacing),
+
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: placeholderTitleLines,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        textHeightBehavior: const TextHeightBehavior(
+                          applyHeightToFirstAscent: true,
+                          applyHeightToLastDescent: true,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                          height: 1.28,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+/// Cineara globe/play mark displayed by [_PosterPlaceholder].
+class _PosterPlaceholderMark extends StatelessWidget {
+  const _PosterPlaceholderMark({
+    required this.globeSize,
+    required this.playSize,
+  });
+
+  final double globeSize;
+  final double playSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        Icon(
+          Icons.public_rounded,
+          size: globeSize,
+          color: theme.colorScheme.primary.withValues(alpha: 0.78),
+        ),
+        Icon(
+          Icons.play_arrow_rounded,
+          size: playSize,
+          color: CinearaColours.neutral0,
+        ),
+      ],
     );
   }
 }
@@ -1434,49 +1657,66 @@ class _PosterGradient extends StatelessWidget {
 /// Richer cultural identity such as `K-Drama`, `Anime`, `Malayalam`, etc.
 /// belongs in metadata, the detail screen, World Lens or the long-press sheet.
 ///
-/// The marker uses fixed dimensions and fixed line metrics so its visual
-/// footprint remains consistent across cards, glyphs and fonts.
+/// The marker grows slightly with accessibility text while using a restrained
+/// capped scale so it remains compact inside poster artwork.
 class _WorldIdentityChip extends StatelessWidget {
-  const _WorldIdentityChip({required this.identity});
+  const _WorldIdentityChip({
+    required this.identity,
+    required this.boldText,
+    required this.highContrast,
+  });
 
   final PosterWorldIdentity identity;
+  final bool boldText;
+  final bool highContrast;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return Semantics(
-      label: identity.semanticLabel,
-      child: ExcludeSemantics(
-        child: Container(
-          width: CinearaSpacing.xl,
-          height: CinearaSpacing.lg,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          alignment: Alignment.center,
+    final double overlayScale = _overlayTextScale(context);
+
+    final double width = 32 * overlayScale;
+    final double height = 24 * overlayScale;
+
+    return ExcludeSemantics(
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: DecoratedBox(
           decoration: BoxDecoration(
-            color: CinearaColours.brand700.withValues(alpha: 0.92),
+            color: theme.colorScheme.primary,
             borderRadius: BorderRadius.circular(CinearaRadii.pill),
             border: Border.all(
-              color: CinearaColours.neutral0.withValues(alpha: 0.16),
-              width: 1,
+              color: theme.colorScheme.onPrimary.withValues(alpha: 0.32),
+              width: highContrast ? 1.5 : 1,
             ),
           ),
-          child: Text(
-            identity.compactLabel,
-            maxLines: 1,
-            overflow: TextOverflow.clip,
-            textAlign: TextAlign.center,
-            strutStyle: const StrutStyle(
-              fontSize: CinearaFontSizes.labelSmall,
-              height: 1,
-              forceStrutHeight: true,
-            ),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: CinearaColours.neutral0,
-              fontSize: CinearaFontSizes.labelSmall,
-              fontWeight: FontWeight.w800,
-              height: 1,
-              letterSpacing: 0.2,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6 * overlayScale),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                identity.compactLabel,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.clip,
+                textAlign: TextAlign.center,
+                textScaler: TextScaler.linear(overlayScale),
+                textHeightBehavior: const TextHeightBehavior(
+                  applyHeightToFirstAscent: true,
+                  applyHeightToLastDescent: true,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onPrimary,
+                  fontSize: CinearaFontSizes.labelSmall,
+                  fontWeight: boldText ? FontWeight.w900 : FontWeight.w800,
+                  height: 1.15,
+                  letterSpacing: 0.1,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+              ),
             ),
           ),
         ),
@@ -1487,82 +1727,76 @@ class _WorldIdentityChip extends StatelessWidget {
 
 /// External/community rating.
 ///
-/// The rating uses the same compact geometry and line metrics as Cineara's
-/// world marker. On spacious cards the source is shown alongside the value;
-/// otherwise only the rating value is displayed.
+/// The rating uses the same restrained accessibility scaling as the other
+/// artwork pills while keeping a predictable compact footprint.
 class _ExternalRatingMark extends StatelessWidget {
-  const _ExternalRatingMark({required this.rating, required this.showSource});
+  const _ExternalRatingMark({
+    required this.rating,
+    required this.boldText,
+    required this.highContrast,
+  });
 
-  /// External rating value and source information.
   final PosterExternalRating rating;
+  final bool boldText;
+  final bool highContrast;
 
-  /// Whether to show the rating source label.
-  final bool showSource;
+  static const double _baseWidth = 38;
+  static const double _baseHeight = 20;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final CinearaThemeExtension cinearaTheme = theme
+        .extension<CinearaThemeExtension>()!;
+
+    final double overlayScale = _overlayTextScale(context);
 
     return ExcludeSemantics(
-      child: Container(
-        width: showSource ? null : CinearaSpacing.xl,
-        height: CinearaSpacing.lg,
-        constraints: showSource ? const BoxConstraints(minWidth: 32) : null,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.70),
-          borderRadius: BorderRadius.circular(CinearaRadii.pill),
-          border: Border.all(
-            color: CinearaColours.neutral0.withValues(alpha: 0.16),
-            width: 1,
+      child: SizedBox(
+        width: _baseWidth * overlayScale,
+        height: _baseHeight * overlayScale,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cinearaTheme.artworkOverlaySurface,
+            borderRadius: BorderRadius.circular(CinearaRadii.pill),
+            border: Border.all(
+              color: cinearaTheme.artworkOverlayOutline,
+              width: highContrast ? 1.5 : 1,
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            if (showSource) ...<Widget>[
-              Text(
-                rating.sourceLabel,
-                maxLines: 1,
-                overflow: TextOverflow.clip,
-                strutStyle: const StrutStyle(
-                  fontSize: CinearaFontSizes.labelSmall,
-                  height: 1,
-                  forceStrutHeight: true,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4 * overlayScale),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Directionality(
+                textDirection: TextDirection.ltr,
+                child: Text(
+                  rating.value,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  textAlign: TextAlign.center,
+                  textScaler: TextScaler.linear(overlayScale),
+                  textHeightBehavior: const TextHeightBehavior(
+                    applyHeightToFirstAscent: true,
+                    applyHeightToLastDescent: true,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: CinearaColours.neutral0,
+                    fontSize: 10.5,
+                    fontWeight: boldText ? FontWeight.w900 : FontWeight.w800,
+                    height: 1.15,
+                    leadingDistribution: TextLeadingDistribution.even,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
                 ),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: CinearaColours.neutral0.withValues(alpha: 0.76),
-                  fontSize: CinearaFontSizes.labelSmall,
-                  fontWeight: FontWeight.w600,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(width: CinearaSpacing.xxs),
-            ],
-            Text(
-              rating.value,
-              maxLines: 1,
-              overflow: TextOverflow.clip,
-              textAlign: TextAlign.center,
-              strutStyle: const StrutStyle(
-                fontSize: CinearaFontSizes.labelSmall,
-                height: 1,
-                forceStrutHeight: true,
-              ),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: CinearaColours.neutral0,
-                fontSize: CinearaFontSizes.labelSmall,
-                fontWeight: FontWeight.w800,
-                height: 1,
-
-                // Keeps rating digits visually consistent.
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1571,138 +1805,281 @@ class _ExternalRatingMark extends StatelessWidget {
 
 /// Passive personal Cineara rating.
 ///
-/// Uses the same compact height and visual treatment as the status dock.
-/// The fixed width keeps values such as `9.2` and `10` visually consistent.
+/// Uses the same fixed artwork-safe neutral surface and restrained
+/// accessibility scaling as the other utility overlays.
 class _UserRatingMark extends StatelessWidget {
-  const _UserRatingMark({required this.value});
+  const _UserRatingMark({
+    required this.value,
+    required this.boldText,
+    required this.highContrast,
+  });
 
-  /// Rating personally assigned by the current user.
   final String value;
+  final bool boldText;
+  final bool highContrast;
+
+  static const double _baseWidth = 38;
+  static const double _baseHeight = 20;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
+    final CinearaThemeExtension cinearaTheme = theme
+        .extension<CinearaThemeExtension>()!;
+
+    final double overlayScale = _overlayTextScale(context);
+
     return ExcludeSemantics(
-      child: Container(
-        width: 38,
-        height: 20,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.70),
-          borderRadius: BorderRadius.circular(CinearaRadii.pill),
-          border: Border.all(
-            color: CinearaColours.neutral0.withValues(alpha: 0.16),
-            width: 1,
+      child: SizedBox(
+        width: _baseWidth * overlayScale,
+        height: _baseHeight * overlayScale,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cinearaTheme.artworkOverlaySurface,
+            borderRadius: BorderRadius.circular(CinearaRadii.pill),
+            border: Border.all(
+              color: cinearaTheme.artworkOverlayOutline,
+              width: highContrast ? 1.5 : 1,
+            ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: highContrast ? 0.30 : 0.18,
+                ),
+                blurRadius: 5,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 5,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            const Icon(
-              Icons.star_rounded,
-              size: 9,
-              color: CinearaColours.userRating,
-            ),
-            const SizedBox(width: 2),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.clip,
-              textAlign: TextAlign.center,
-              strutStyle: const StrutStyle(
-                fontSize: 10,
-                height: 1,
-                forceStrutHeight: true,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4 * overlayScale),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Directionality(
+                textDirection: TextDirection.ltr,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    Icon(
+                      Icons.star_rounded,
+                      size: 9 * overlayScale,
+                      color: CinearaColours.userRating,
+                    ),
+                    SizedBox(width: 2 * overlayScale),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.visible,
+                      textAlign: TextAlign.center,
+                      textScaler: TextScaler.linear(overlayScale),
+                      textHeightBehavior: const TextHeightBehavior(
+                        applyHeightToFirstAscent: true,
+                        applyHeightToLastDescent: true,
+                        leadingDistribution: TextLeadingDistribution.even,
+                      ),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: CinearaColours.userRating,
+                        fontSize: 10,
+                        fontWeight: boldText
+                            ? FontWeight.w900
+                            : FontWeight.w800,
+                        height: 1.15,
+                        leadingDistribution: TextLeadingDistribution.even,
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: CinearaColours.userRating,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                height: 1,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-              ),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Tilted event marker shown when newly available content exists.
+/// Theme-adaptive edge signature for newly available content.
 ///
-/// This intentionally looks different from normal state indicators because
-/// "NEW" is a temporary event, not a permanent user relationship.
+/// Movies, series, seasons, and episode updates all use the same compact
+/// top/trailing corner mark. The visual does not encode the content type or
+/// count; that information remains available through the card semantics.
 ///
-/// The badge uses a fixed height and fixed line metrics so translated labels
-/// and fallback fonts do not change its vertical footprint.
-class _NewContentBadge extends StatelessWidget {
-  const _NewContentBadge({required this.label});
+/// The geometry stays identical across themes, while its brand colours come
+/// from the active [ColorScheme].
+class _PosterNewContentIndicator extends StatelessWidget {
+  const _PosterNewContentIndicator({
+    required this.animationDuration,
+    required this.highContrast,
+  });
 
-  /// Short localized label displayed by the marker.
-  final String label;
+  final Duration animationDuration;
+  final bool highContrast;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool reduceMotion = animationDuration == Duration.zero;
+
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final double width = constraints.maxWidth;
+            final double height = constraints.maxHeight;
+
+            if (!width.isFinite ||
+                !height.isFinite ||
+                width <= 0 ||
+                height <= 0) {
+              return const SizedBox.shrink();
+            }
+
+            final double shortestSide = width < height ? width : height;
+            final double length = (shortestSide * 0.34)
+                .clamp(28.0, 52.0)
+                .toDouble();
+            final double thickness = highContrast ? 3.25 : 2.5;
+
+            return TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: 1),
+              duration: reduceMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 360),
+              curve: Curves.easeOutCubic,
+              builder: (BuildContext context, double value, Widget? child) {
+                final double reveal = reduceMotion ? 1.0 : value;
+
+                return Stack(
+                  fit: StackFit.expand,
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    PositionedDirectional(
+                      top: 0,
+                      end: 0,
+                      child: Opacity(
+                        opacity: highContrast ? 1.0 : (0.42 + (0.58 * reveal)),
+                        child: _PosterNewContentCornerStroke(
+                          length: length * (0.38 + (0.62 * reveal)),
+                          thickness: thickness,
+                          highContrast: highContrast,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// One L-shaped piece of Cineara's universal new-content signature.
+///
+/// The shape is stable, but its colours follow the active theme so new-content
+/// feedback remains part of the current Cineara visual identity.
+class _PosterNewContentCornerStroke extends StatelessWidget {
+  const _PosterNewContentCornerStroke({
+    required this.length,
+    required this.thickness,
+    required this.highContrast,
+  });
+
+  final double length;
+  final double thickness;
+  final bool highContrast;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return IgnorePointer(
-      child: Transform.rotate(
-        angle: -0.10,
-        child: Container(
-          height: 20,
-          padding: const EdgeInsets.symmetric(horizontal: CinearaSpacing.xs),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                CinearaColours.logoPink,
-                CinearaColours.logoViolet,
-              ],
+    final Color start = theme.colorScheme.tertiary;
+    final Color end = theme.colorScheme.primary;
+
+    final List<BoxShadow> shadows = highContrast
+        ? const <BoxShadow>[]
+        : <BoxShadow>[
+            BoxShadow(
+              color: end.withValues(alpha: 0.34),
+              blurRadius: 5,
+              spreadRadius: 0,
             ),
-            borderRadius: BorderRadius.circular(CinearaRadii.sm),
-            border: Border.all(
-              color: CinearaColours.neutral0.withValues(alpha: 0.28),
-            ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.50),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+          ];
+
+    return SizedBox(
+      width: length,
+      height: length,
+      child: Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          PositionedDirectional(
+            top: 0,
+            start: 0,
+            end: 0,
+            child: Container(
+              height: thickness,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(CinearaRadii.pill),
+                gradient: LinearGradient(
+                  begin: AlignmentDirectional.centerStart,
+                  end: AlignmentDirectional.centerEnd,
+                  colors: <Color>[
+                    start.withValues(alpha: 0),
+                    start.withValues(alpha: highContrast ? 0.80 : 0.42),
+                    end.withValues(alpha: highContrast ? 1.0 : 0.96),
+                  ],
+                  stops: const <double>[0.0, 0.48, 1.0],
+                ),
+                boxShadow: shadows,
               ),
-            ],
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.clip,
-            textAlign: TextAlign.center,
-            strutStyle: const StrutStyle(
-              fontSize: CinearaFontSizes.labelSmall,
-              height: 1,
-              forceStrutHeight: true,
-            ),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: CinearaColours.neutral0,
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.6,
-              height: 1,
             ),
           ),
-        ),
+          PositionedDirectional(
+            top: 0,
+            bottom: 0,
+            end: 0,
+            child: Container(
+              width: thickness,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(CinearaRadii.pill),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[
+                    end.withValues(alpha: highContrast ? 1.0 : 0.96),
+                    start.withValues(alpha: highContrast ? 0.80 : 0.42),
+                    start.withValues(alpha: 0),
+                  ],
+                  stops: const <double>[0.0, 0.52, 1.0],
+                ),
+                boxShadow: shadows,
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            top: 0,
+            end: 0,
+            child: Container(
+              width: thickness * 1.55,
+              height: thickness * 1.55,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: end.withValues(alpha: highContrast ? 1.0 : 0.96),
+                boxShadow: shadows,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1749,6 +2126,7 @@ class _PosterStatusDock extends StatelessWidget {
     required this.items,
     required this.maxVisibleItems,
     required this.animationDuration,
+    required this.highContrast,
   });
 
   /// Status items available to display.
@@ -1760,7 +2138,13 @@ class _PosterStatusDock extends StatelessWidget {
   /// Duration used for dock state transitions.
   final Duration animationDuration;
 
-  /// Resolves the colour associated with each personal-state category.
+  final bool highContrast;
+
+  /// Resolves the fixed colour associated with each personal-state category.
+  ///
+  /// These icon colours intentionally do not follow the active app theme.
+  /// They are semantic poster-overlay colours and must remain visually stable
+  /// across Light, Dark, Sunrise and future Cineara themes.
   Color _resolveStatusColor(_PosterStatusTone tone) {
     return switch (tone) {
       _PosterStatusTone.watching => CinearaColours.statusWatching,
@@ -1778,6 +2162,11 @@ class _PosterStatusDock extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
+    final CinearaThemeExtension cinearaTheme = theme
+        .extension<CinearaThemeExtension>()!;
+
+    final double overlayScale = _overlayTextScale(context);
+
     final int visibleCount = items.length < maxVisibleItems
         ? items.length
         : maxVisibleItems;
@@ -1792,14 +2181,14 @@ class _PosterStatusDock extends StatelessWidget {
       child: AnimatedSize(
         duration: animationDuration,
         curve: Curves.easeOutCubic,
-        alignment: Alignment.centerLeft,
+        alignment: AlignmentDirectional.centerStart,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.62),
+            color: cinearaTheme.artworkOverlaySurface,
             borderRadius: BorderRadius.circular(CinearaRadii.pill),
             border: Border.all(
-              color: CinearaColours.neutral0.withValues(alpha: 0.18),
-              width: 1,
+              color: cinearaTheme.artworkOverlayOutline,
+              width: highContrast ? 1.5 : 1,
             ),
             boxShadow: <BoxShadow>[
               BoxShadow(
@@ -1810,9 +2199,9 @@ class _PosterStatusDock extends StatelessWidget {
             ],
           ),
           child: SizedBox(
-            height: 20,
+            height: (20 * overlayScale).clamp(20.0, 24.0).toDouble(),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+              padding: EdgeInsets.symmetric(horizontal: 6 * overlayScale),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1828,10 +2217,11 @@ class _PosterStatusDock extends StatelessWidget {
                       icon: visibleItems[index].icon,
                       color: _resolveStatusColor(visibleItems[index].tone),
                       animationDuration: animationDuration,
+                      iconSize: 13 * overlayScale,
                     ),
 
                     if (index != visibleItems.length - 1 || hiddenCount > 0)
-                      const SizedBox(width: 3),
+                      SizedBox(width: 3 * overlayScale),
                   ],
 
                   if (hiddenCount > 0)
@@ -1839,11 +2229,13 @@ class _PosterStatusDock extends StatelessWidget {
                       key: ValueKey<int>(hiddenCount),
                       hiddenCount: hiddenCount,
                       animationDuration: animationDuration,
+                      textScale: overlayScale,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: CinearaColours.neutral0,
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
-                        height: 1,
+                        height: 1.10,
+                        leadingDistribution: TextLeadingDistribution.even,
                       ),
                     ),
                 ],
@@ -1864,6 +2256,7 @@ class _AnimatedPosterStatusIcon extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.animationDuration,
+    required this.iconSize,
     super.key,
   });
 
@@ -1875,6 +2268,8 @@ class _AnimatedPosterStatusIcon extends StatelessWidget {
 
   /// Duration of the entrance animation.
   final Duration animationDuration;
+
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
@@ -1891,7 +2286,7 @@ class _AnimatedPosterStatusIcon extends StatelessWidget {
           ),
         );
       },
-      child: Icon(icon, size: 13, color: color),
+      child: Icon(icon, size: iconSize, color: color),
     );
   }
 }
@@ -1901,6 +2296,7 @@ class _AnimatedPosterStatusOverflow extends StatelessWidget {
   const _AnimatedPosterStatusOverflow({
     required this.hiddenCount,
     required this.animationDuration,
+    required this.textScale,
     required this.style,
     super.key,
   });
@@ -1910,6 +2306,8 @@ class _AnimatedPosterStatusOverflow extends StatelessWidget {
 
   /// Duration of the count transition.
   final Duration animationDuration;
+
+  final double textScale;
 
   /// Text style used by the overflow count.
   final TextStyle? style;
@@ -1932,10 +2330,13 @@ class _AnimatedPosterStatusOverflow extends StatelessWidget {
       child: Text(
         '+$hiddenCount',
         key: ValueKey<int>(hiddenCount),
-        strutStyle: const StrutStyle(
-          fontSize: 9,
-          height: 1,
-          forceStrutHeight: true,
+        maxLines: 1,
+        softWrap: false,
+        textScaler: TextScaler.linear(textScale),
+        textHeightBehavior: const TextHeightBehavior(
+          applyHeightToFirstAscent: true,
+          applyHeightToLastDescent: true,
+          leadingDistribution: TextLeadingDistribution.even,
         ),
         style: style,
       ),
@@ -1944,7 +2345,13 @@ class _AnimatedPosterStatusOverflow extends StatelessWidget {
 }
 
 /// Single interactive shortcut displayed at the bottom-right of the artwork.
-class _PosterQuickActionButton extends StatelessWidget {
+///
+/// Interaction:
+/// - compresses slightly while pressed;
+/// - gives a short spring-like pop after activation;
+/// - emits a restrained Cineara-coloured confirmation ring;
+/// - optionally provides light haptic feedback.
+class _PosterQuickActionButton extends StatefulWidget {
   const _PosterQuickActionButton({
     required this.action,
     required this.mediaTitle,
@@ -1960,6 +2367,27 @@ class _PosterQuickActionButton extends StatelessWidget {
   final bool enableHaptics;
   final Duration animationDuration;
   final PosterMediaCardLabels labels;
+
+  @override
+  State<_PosterQuickActionButton> createState() =>
+      _PosterQuickActionButtonState();
+}
+
+/// State for the poster quick-action button.
+///
+/// Tracks the pressed interaction state and controls the short confirmation
+/// animation shown after the action is triggered.
+class _PosterQuickActionButtonState extends State<_PosterQuickActionButton>
+    with SingleTickerProviderStateMixin {
+  bool _isPressed = false;
+
+  late final AnimationController _confirmationController;
+
+  late final Animation<double> _popScale;
+  late final Animation<double> _ringScale;
+  late final Animation<double> _ringOpacity;
+
+  PosterQuickAction get action => widget.action;
 
   IconData get _icon {
     return switch (action.type) {
@@ -1982,99 +2410,262 @@ class _PosterQuickActionButton extends StatelessWidget {
       return label;
     }
 
-    return labels.quickAction(action.type, action.isActive, mediaTitle);
+    return widget.labels.quickAction(
+      action.type,
+      action.isActive,
+      widget.mediaTitle,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _confirmationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    // Small overshoot after the user releases the button.
+    _popScale = TweenSequence<double>(<TweenSequenceItem<double>>[
+      TweenSequenceItem<double>(
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 1.10,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 40,
+      ),
+      TweenSequenceItem<double>(
+        tween: Tween<double>(
+          begin: 1.10,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 60,
+      ),
+    ]).animate(_confirmationController);
+
+    // Expanding ring behind the button.
+    _ringScale = Tween<double>(begin: 0.82, end: 1.70).animate(
+      CurvedAnimation(
+        parent: _confirmationController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+
+    // Ring disappears as it expands.
+    _ringOpacity = Tween<double>(begin: 0.42, end: 0.0).animate(
+      CurvedAnimation(parent: _confirmationController, curve: Curves.easeOut),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      _confirmationController.stop();
+      _confirmationController.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _confirmationController.dispose();
+    super.dispose();
+  }
+
+  void _handleHighlightChanged(bool highlighted) {
+    if (_isPressed == highlighted) {
+      return;
+    }
+
+    setState(() {
+      _isPressed = highlighted;
+    });
   }
 
   void _handleTap() {
-    if (enableHaptics) {
+    if (widget.enableHaptics) {
       HapticFeedback.lightImpact();
     }
 
+    final bool reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
+    // Do not run decorative motion when the platform requests reduced motion.
+    if (!reduceMotion) {
+      _confirmationController.forward(from: 0);
+    }
+
+    // Let the parent update the actual watchlist/favourite/watched state.
     action.onPressed();
   }
 
   @override
   Widget build(BuildContext context) {
-    final double hitSize = switch (density) {
-      _PosterDensity.tiny => 36,
-      _PosterDensity.compact => 38,
-      _PosterDensity.regular => 42,
-      _PosterDensity.spacious => 44,
-    };
+    final ThemeData theme = Theme.of(context);
 
-    final double visualSize = switch (density) {
+    // Keep the interactive target at least 48 logical pixels even though the
+    // visible circular control remains intentionally compact over artwork.
+    const double hitSize = 48;
+
+    final double overlayScale = _overlayTextScale(context);
+
+    final double baseVisualSize = switch (widget.density) {
       _PosterDensity.tiny => 27,
       _PosterDensity.compact => 29,
       _PosterDensity.regular => 32,
       _PosterDensity.spacious => 34,
     };
 
-    final double iconSize = switch (density) {
+    final double baseIconSize = switch (widget.density) {
       _PosterDensity.tiny => 16,
       _PosterDensity.compact => 17,
       _PosterDensity.regular => 18,
       _PosterDensity.spacious => 19,
     };
 
+    final double visualSize = baseVisualSize * overlayScale;
+    final double iconSize = baseIconSize * overlayScale;
+
+    final MediaQueryData mediaQuery = MediaQuery.of(context);
+    final bool reduceMotion = mediaQuery.disableAnimations;
+    final bool highContrast = mediaQuery.highContrast;
+
+    final Duration pressDuration = reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 80);
+    final Duration releaseDuration = reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 120);
+
     return Semantics(
       button: true,
+      enabled: true,
       label: _semanticLabel,
+      onTap: _handleTap,
       child: ExcludeSemantics(
         child: SizedBox.square(
           dimension: hitSize,
           child: InkResponse(
             onTap: _handleTap,
+            onHighlightChanged: _handleHighlightChanged,
             radius: hitSize / 2,
             containedInkWell: false,
             highlightShape: BoxShape.circle,
+
             child: Center(
-              child: AnimatedContainer(
-                duration: animationDuration,
-                curve: Curves.easeOutCubic,
-                width: visualSize,
-                height: visualSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: action.isActive
-                      ? CinearaColours.brand600.withValues(alpha: 0.96)
-                      : Colors.black.withValues(alpha: 0.70),
-                  border: Border.all(
-                    color: action.isActive
-                        ? CinearaColours.brand300.withValues(alpha: 0.62)
-                        : CinearaColours.neutral0.withValues(alpha: 0.20),
-                  ),
-                  boxShadow: action.isActive
-                      ? <BoxShadow>[
-                          BoxShadow(
-                            color: CinearaColours.logoViolet.withValues(
-                              alpha: 0.24,
+              child: AnimatedBuilder(
+                animation: _confirmationController,
+                builder: (BuildContext context, Widget? child) {
+                  return Stack(
+                    alignment: Alignment.center,
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      // -------------------------------------------------------
+                      // CONFIRMATION RING
+                      // -------------------------------------------------------
+                      IgnorePointer(
+                        child: Opacity(
+                          opacity: reduceMotion ? 0 : _ringOpacity.value,
+                          child: Transform.scale(
+                            scale: _ringScale.value,
+                            child: Container(
+                              width: visualSize,
+                              height: visualSize,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  width: 1.5,
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: highContrast ? 1.0 : 0.85,
+                                  ),
+                                ),
+                              ),
                             ),
-                            blurRadius: 8,
                           ),
-                        ]
-                      : const <BoxShadow>[],
-                ),
-                child: AnimatedSwitcher(
-                  duration: animationDuration,
-                  transitionBuilder:
-                      (Widget child, Animation<double> animation) {
-                        return FadeTransition(
-                          opacity: animation,
-                          child: ScaleTransition(
-                            scale: animation,
-                            child: child,
+                        ),
+                      ),
+
+                      // ---------------------------------------------------------
+                      // BUTTON
+                      // ---------------------------------------------------------
+                      AnimatedScale(
+                        // Immediate physical compression while the finger
+                        // remains on the button.
+                        scale: reduceMotion
+                            ? 1.0
+                            : (_isPressed ? 0.88 : _popScale.value),
+                        duration: _isPressed ? pressDuration : releaseDuration,
+                        curve: _isPressed
+                            ? Curves.easeOutCubic
+                            : Curves.easeOutBack,
+                        child: AnimatedContainer(
+                          duration: widget.animationDuration,
+                          curve: Curves.easeOutCubic,
+                          width: visualSize,
+                          height: visualSize,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: action.isActive
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.surfaceContainerHigh
+                                      .withValues(
+                                        alpha: highContrast ? 1.0 : 0.92,
+                                      ),
+                            border: Border.all(
+                              color: action.isActive
+                                  ? theme.colorScheme.onPrimary.withValues(
+                                      alpha: highContrast ? 0.85 : 0.28,
+                                    )
+                                  : theme.colorScheme.outline.withValues(
+                                      alpha: highContrast ? 1.0 : 0.65,
+                                    ),
+                              width: highContrast ? 1.5 : 1,
+                            ),
+                            boxShadow: action.isActive
+                                ? <BoxShadow>[
+                                    BoxShadow(
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.30),
+                                      blurRadius: 8,
+                                    ),
+                                  ]
+                                : const <BoxShadow>[],
                           ),
-                        );
-                      },
-                  child: Icon(
-                    _icon,
-                    key: ValueKey<String>(
-                      '${action.type.name}-${action.isActive}',
-                    ),
-                    size: iconSize,
-                    color: CinearaColours.neutral0,
-                  ),
-                ),
+                          child: AnimatedSwitcher(
+                            duration: widget.animationDuration,
+                            switchInCurve: Curves.easeOutBack,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder:
+                                (Widget child, Animation<double> animation) {
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: ScaleTransition(
+                                      scale: Tween<double>(
+                                        begin: 0.72,
+                                        end: 1.0,
+                                      ).animate(animation),
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                            child: Icon(
+                              _icon,
+                              key: ValueKey<String>(
+                                '${action.type.name}-${action.isActive}',
+                              ),
+                              size: iconSize,
+                              color: action.isActive
+                                  ? theme.colorScheme.onPrimary
+                                  : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -2089,7 +2680,7 @@ class _PosterJourneyEdge extends StatelessWidget {
   const _PosterJourneyEdge({required this.progress});
 
   /// Viewing progress from 0.0 to 1.0.
-  final double? progress;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
@@ -2109,17 +2700,19 @@ class _PosterJourneyEdge extends StatelessWidget {
         children: <Widget>[
           ColoredBox(color: trackColor.withValues(alpha: 0.78)),
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: FractionallySizedBox(
               widthFactor: progress,
               heightFactor: 1,
-              child: const DecoratedBox(
+              child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
+                    begin: AlignmentDirectional.centerStart,
+                    end: AlignmentDirectional.centerEnd,
                     colors: <Color>[
-                      CinearaColours.logoPink,
-                      CinearaColours.logoViolet,
-                      CinearaColours.logoBlue,
+                      theme.colorScheme.tertiary,
+                      theme.colorScheme.primary,
+                      theme.colorScheme.secondary,
                     ],
                   ),
                 ),
@@ -2148,74 +2741,116 @@ class _PosterInformation extends StatelessWidget {
     required this.subtitle,
     required this.secondarySubtitle,
     required this.maxTitleLines,
+    required this.boldText,
+    required this.highContrast,
   });
 
   final String title;
   final String? subtitle;
   final String? secondarySubtitle;
   final int maxTitleLines;
+  final bool boldText;
+  final bool highContrast;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final double textScale = _effectiveTextScale(context);
 
     final bool hasSubtitle = subtitle != null && subtitle!.trim().isNotEmpty;
-
     final bool hasSecondarySubtitle =
         secondarySubtitle != null && secondarySubtitle!.trim().isNotEmpty;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        //
-        // TITLE
-        //
-        Text(
-          title,
-          maxLines: maxTitleLines,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontSize: 14,
-            height: 1.18,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.1,
-          ),
-        ),
+    const TextHeightBehavior textHeightBehavior = TextHeightBehavior(
+      applyHeightToFirstAscent: true,
+      applyHeightToLastDescent: true,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
 
-        //
-        // PRIMARY METADATA
-        //
-        if (hasSubtitle) ...<Widget>[
-          const SizedBox(height: CinearaSpacing.xxs),
-          Text(
-            subtitle!,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontSize: 12,
-              height: 1.2,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
+    return ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double width = constraints.hasBoundedWidth
+              ? constraints.maxWidth
+              : 160;
 
-        //
-        // SECONDARY METADATA
-        //
-        if (hasSecondarySubtitle) ...<Widget>[
-          const SizedBox(height: CinearaSpacing.xxs),
-          Text(
-            secondarySubtitle!,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontSize: 11.5,
-              height: 1.2,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.82),
-            ),
-          ),
-        ],
-      ],
+          final bool narrow = width < 130;
+
+          // Keep poster grids scannable at accessibility sizes. The parent card
+          // already exposes the complete title and metadata semantically, so
+          // visual text uses progressive disclosure instead of expanding into
+          // a tall block of wrapped lines.
+          final int resolvedTitleLines = textScale >= 1.30
+              ? maxTitleLines.clamp(1, 2).toInt()
+              : maxTitleLines;
+
+          // Primary metadata stays visible, but always as one concise line.
+          const int primaryMetadataLines = 1;
+
+          // Secondary metadata is the first textual detail removed as either
+          // width or text scale becomes constrained.
+          final bool showSecondarySubtitle =
+              hasSecondarySubtitle &&
+              textScale < 1.80 &&
+              !(narrow && textScale >= 1.30);
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                maxLines: resolvedTitleLines,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.start,
+                textHeightBehavior: textHeightBehavior,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontSize: 14,
+                  height: 1.24,
+                  fontWeight: boldText ? FontWeight.w700 : FontWeight.w600,
+                  letterSpacing: 0,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+              ),
+              if (hasSubtitle) ...<Widget>[
+                const SizedBox(height: CinearaSpacing.xxs),
+                Text(
+                  subtitle!,
+                  maxLines: primaryMetadataLines,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.start,
+                  textHeightBehavior: textHeightBehavior,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12,
+                    height: 1.26,
+                    fontWeight: boldText ? FontWeight.w600 : FontWeight.w400,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                ),
+              ],
+              if (showSecondarySubtitle) ...<Widget>[
+                const SizedBox(height: CinearaSpacing.xxs),
+                Text(
+                  secondarySubtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.start,
+                  textHeightBehavior: textHeightBehavior,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11.5,
+                    height: 1.26,
+                    fontWeight: boldText ? FontWeight.w600 : FontWeight.w400,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: highContrast ? 1.0 : 0.82,
+                    ),
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
     );
   }
 }
