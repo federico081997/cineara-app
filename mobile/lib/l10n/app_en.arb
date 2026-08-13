@@ -66,6 +66,16 @@
       }
     }
   },
+  "posterNewEpisodeBadge": "{count, plural, =1{NEW} other{{count} NEW}}",
+  "@posterNewEpisodeBadge": {
+    "description": "Short poster badge indicating newly available episodes.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
   "posterNewContent": "NEW",
   "@posterNewContent": {
     "description": "Short visual badge shown for newly available media or episodes."

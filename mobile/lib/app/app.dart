@@ -1,7 +1,7 @@
 import 'package:cineara_design_system/cineara_design_system.dart';
+import 'package:cineara_mobile/features/theme_preview/poster_media_card_preview.dart';
 import 'package:flutter/material.dart';
 
-import '../features/theme_preview/theme_preview_screen.dart';
 import '../l10n/app_localizations.dart';
 
 class CinearaApp extends StatelessWidget {
@@ -24,7 +24,7 @@ class CinearaApp extends StatelessWidget {
       darkTheme: CinearaDarkTheme.theme,
 
       // Temporary while designing the dark theme.
-      themeMode: ThemeMode.dark,
+      themeMode: ThemeMode.light,
 
       home: const PosterMediaCardPreviewScreen(),
     );

@@ -70,6 +70,16 @@
   "@posterNewContent": {
     "description": "Etichetta breve mostrata quando è disponibile un nuovo titolo o nuovo contenuto."
   },
+  "posterNewEpisodeBadge": "{count, plural, =1{NUOVI} other{{count} NUOVI}}",
+  "@posterNewEpisodeBadge": {
+    "description": "Etichetta breve sul poster che indica la presenza di nuovi episodi.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
   "posterNewRelease": "Nuova uscita",
   "@posterNewRelease": {
     "description": "Indica che il titolo è una nuova uscita."

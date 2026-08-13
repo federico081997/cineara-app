@@ -170,6 +170,12 @@ abstract class AppLocalizations {
   /// **'{percentage}% watched'**
   String posterProgress(int percentage);
 
+  /// Short poster badge indicating newly available episodes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{NEW} other{{count} NEW}}'**
+  String posterNewEpisodeBadge(int count);
+
   /// Short visual badge shown for newly available media or episodes.
   ///
   /// In en, this message translates to:

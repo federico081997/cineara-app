@@ -48,7 +48,6 @@ class _PosterMediaCardPreviewScreenState
   PosterViewingStatus _testViewingStatus = PosterViewingStatus.notStarted;
   PosterQuickActionType _testQuickActionType = PosterQuickActionType.watchlist;
 
-  bool _testQuickActionActive = false;
   bool _testShowQuickAction = true;
 
   bool _testWatchlist = false;
@@ -59,6 +58,16 @@ class _PosterMediaCardPreviewScreenState
   bool _testShowStatusDock = true;
 
   PosterNewContent? _testNewContent;
+
+  // Preview-only personal-state overrides.
+  //
+  // The catalogue data below stays immutable, while these maps let quick actions
+  // behave like real controls. The same title therefore keeps the same preview
+  // state when it appears in more than one Home section.
+  final Map<String, bool> _watchlistOverrides = <String, bool>{};
+  final Map<String, bool> _favouriteOverrides = <String, bool>{};
+  final Map<String, PosterViewingStatus> _viewingStatusOverrides =
+      <String, PosterViewingStatus>{};
 
   // ---------------------------------------------------------------------------
   // WORLD IDENTITIES
@@ -1174,6 +1183,97 @@ class _PosterMediaCardPreviewScreenState
       );
   }
 
+  bool _effectiveWatchlist(_HomeMedia media) {
+    return _watchlistOverrides[media.title] ?? media.isInWatchlist;
+  }
+
+  bool _effectiveFavourite(_HomeMedia media) {
+    return _favouriteOverrides[media.title] ?? media.isFavourite;
+  }
+
+  PosterViewingStatus _effectiveViewingStatus(_HomeMedia media) {
+    return _viewingStatusOverrides[media.title] ?? media.viewingStatus;
+  }
+
+  bool _quickActionIsActive(_HomeMedia media, PosterQuickActionType type) {
+    return switch (type) {
+      PosterQuickActionType.watchlist => _effectiveWatchlist(media),
+      PosterQuickActionType.favourite => _effectiveFavourite(media),
+      PosterQuickActionType.watched =>
+        _effectiveViewingStatus(media) == PosterViewingStatus.completed,
+    };
+  }
+
+  void _handleMediaQuickAction(_HomeMedia media, PosterQuickActionType type) {
+    setState(() {
+      switch (type) {
+        case PosterQuickActionType.watchlist:
+          final bool nextValue = !_effectiveWatchlist(media);
+          _watchlistOverrides[media.title] = nextValue;
+          break;
+
+        case PosterQuickActionType.favourite:
+          final bool nextValue = !_effectiveFavourite(media);
+          _favouriteOverrides[media.title] = nextValue;
+          break;
+
+        case PosterQuickActionType.watched:
+          final PosterViewingStatus current = _effectiveViewingStatus(media);
+
+          if (current == PosterViewingStatus.completed) {
+            _viewingStatusOverrides[media.title] =
+                media.viewingStatus == PosterViewingStatus.completed
+                ? PosterViewingStatus.notStarted
+                : media.viewingStatus;
+          } else {
+            _viewingStatusOverrides[media.title] =
+                PosterViewingStatus.completed;
+          }
+          break;
+      }
+    });
+  }
+
+  bool get _testQuickActionIsActive {
+    return switch (_testQuickActionType) {
+      PosterQuickActionType.watchlist => _testWatchlist,
+      PosterQuickActionType.favourite => _testFavourite,
+      PosterQuickActionType.watched =>
+        _testViewingStatus == PosterViewingStatus.completed,
+    };
+  }
+
+  void _handleTestQuickAction() {
+    setState(() {
+      switch (_testQuickActionType) {
+        case PosterQuickActionType.watchlist:
+          _testWatchlist = !_testWatchlist;
+          if (_testWatchlist) {
+            _testShowStatusDock = true;
+          }
+          break;
+
+        case PosterQuickActionType.favourite:
+          _testFavourite = !_testFavourite;
+          if (_testFavourite) {
+            _testShowStatusDock = true;
+          }
+          break;
+
+        case PosterQuickActionType.watched:
+          final bool isCompleted =
+              _testViewingStatus == PosterViewingStatus.completed;
+          _testViewingStatus = isCompleted
+              ? PosterViewingStatus.notStarted
+              : PosterViewingStatus.completed;
+          if (!isCompleted) {
+            _testShowStatusDock = true;
+          }
+          break;
+      }
+    });
+  }
+
   PosterMediaCard _card(
     _HomeMedia media, {
     PosterMediaCardLayout layout = PosterMediaCardLayout.artworkWithInformation,
@@ -1195,6 +1295,18 @@ class _PosterMediaCardPreviewScreenState
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     final PosterMediaCardLabels posterLabels = l10n.posterMediaCardLabels;
 
+    final bool effectiveFavourite = _effectiveFavourite(media);
+    final bool effectiveWatchlist = _effectiveWatchlist(media);
+    final PosterViewingStatus effectiveViewingStatus = _effectiveViewingStatus(
+      media,
+    );
+
+    final bool resolvedQuickActionActive = switch (quickActionType) {
+      null => false,
+      final PosterQuickActionType type =>
+        quickActionActive ?? _quickActionIsActive(media, type),
+    };
+
     return PosterMediaCard(
       title: media.title,
       subtitle: media.subtitle,
@@ -1206,9 +1318,9 @@ class _PosterMediaCardPreviewScreenState
       externalRating: media.externalRating,
       userRating: media.userRating,
       statusContext: statusContext,
-      viewingStatus: media.viewingStatus,
-      isFavourite: media.isFavourite,
-      isInWatchlist: media.isInWatchlist,
+      viewingStatus: effectiveViewingStatus,
+      isFavourite: effectiveFavourite,
+      isInWatchlist: effectiveWatchlist,
       collectionCount: media.collectionCount,
       progress: media.progress,
       newContent: media.newContent,
@@ -1223,12 +1335,10 @@ class _PosterMediaCardPreviewScreenState
           ? null
           : PosterQuickAction(
               type: quickActionType,
-              isActive: quickActionActive ?? false,
+              isActive: resolvedQuickActionActive,
               onPressed:
                   onQuickActionPressed ??
-                  () {
-                    _showAction('${media.title}: ${quickActionType.name}');
-                  },
+                  () => _handleMediaQuickAction(media, quickActionType),
             ),
 
       // Tap and long press remain independent so the preview can exercise
@@ -1362,6 +1472,11 @@ class _PosterMediaCardPreviewScreenState
                           showUserRating: _testShowUserRating,
                           showStatusDock: _testShowStatusDock,
                           showNewContent: true,
+                          quickActionType: _testShowQuickAction
+                              ? _testQuickActionType
+                              : null,
+                          quickActionActive: _testQuickActionIsActive,
+                          onQuickActionPressed: _handleTestQuickAction,
                           enableTap: false,
                           enableLongPress: false,
                         ),
@@ -1593,7 +1708,6 @@ class _PosterMediaCardPreviewScreenState
                             setState(() {
                               _testQuickActionType =
                                   PosterQuickActionType.watchlist;
-                              _testQuickActionActive = false;
                               _testShowQuickAction = true;
                             });
                           },
@@ -1610,7 +1724,6 @@ class _PosterMediaCardPreviewScreenState
                             setState(() {
                               _testQuickActionType =
                                   PosterQuickActionType.favourite;
-                              _testQuickActionActive = false;
                               _testShowQuickAction = true;
                             });
                           },
@@ -1627,7 +1740,6 @@ class _PosterMediaCardPreviewScreenState
                             setState(() {
                               _testQuickActionType =
                                   PosterQuickActionType.watched;
-                              _testQuickActionActive = false;
                               _testShowQuickAction = true;
                             });
                           },
@@ -1693,7 +1805,6 @@ class _PosterMediaCardPreviewScreenState
                     showExternalRating: true,
                     showStatusDock: true,
                     quickActionType: PosterQuickActionType.favourite,
-                    quickActionActive: true,
                     enableLongPress: false,
                   ),
                   eyebrow: 'TONIGHT\'S CINEARA PICK',
@@ -1727,7 +1838,6 @@ class _PosterMediaCardPreviewScreenState
                         media,
                         statusContext: PosterStatusContext.viewingStatus,
                         quickActionType: PosterQuickActionType.favourite,
-                        quickActionActive: media.isFavourite,
                       ),
                     );
                   },
@@ -1783,7 +1893,6 @@ class _PosterMediaCardPreviewScreenState
                       child: _card(
                         media,
                         quickActionType: PosterQuickActionType.watchlist,
-                        quickActionActive: media.isInWatchlist,
                       ),
                     );
                   },
@@ -1808,7 +1917,6 @@ class _PosterMediaCardPreviewScreenState
                       width: 138,
                       showStatusDock: false,
                       quickActionType: PosterQuickActionType.watchlist,
-                      quickActionActive: media.isInWatchlist,
                     );
                   },
                 ),
@@ -1837,7 +1945,6 @@ class _PosterMediaCardPreviewScreenState
                         showStatusDock: false,
                         showUserRating: false,
                         quickActionType: PosterQuickActionType.watchlist,
-                        quickActionActive: media.isInWatchlist,
                       ),
                     );
                   },
@@ -1863,7 +1970,6 @@ class _PosterMediaCardPreviewScreenState
                       media,
                       width: 138,
                       quickActionType: PosterQuickActionType.watchlist,
-                      quickActionActive: media.isInWatchlist,
                     );
                   },
                 ),
@@ -1890,7 +1996,6 @@ class _PosterMediaCardPreviewScreenState
                       child: _card(
                         media,
                         quickActionType: PosterQuickActionType.watchlist,
-                        quickActionActive: media.isInWatchlist,
                       ),
                     );
                   },
@@ -1917,7 +2022,6 @@ class _PosterMediaCardPreviewScreenState
                       media,
                       width: 138,
                       quickActionType: PosterQuickActionType.watchlist,
-                      quickActionActive: media.isInWatchlist,
                     );
                   },
                 ),
@@ -1943,7 +2047,6 @@ class _PosterMediaCardPreviewScreenState
                       child: _card(
                         media,
                         quickActionType: PosterQuickActionType.watchlist,
-                        quickActionActive: media.isInWatchlist,
                       ),
                     );
                   },
@@ -1969,7 +2072,6 @@ class _PosterMediaCardPreviewScreenState
                       media,
                       width: 138,
                       quickActionType: PosterQuickActionType.watchlist,
-                      quickActionActive: media.isInWatchlist,
                     );
                   },
                 ),
@@ -1995,7 +2097,6 @@ class _PosterMediaCardPreviewScreenState
                       child: _card(
                         media,
                         quickActionType: PosterQuickActionType.watchlist,
-                        quickActionActive: media.isInWatchlist,
                       ),
                     );
                   },
@@ -2021,7 +2122,6 @@ class _PosterMediaCardPreviewScreenState
                       media,
                       width: 138,
                       quickActionType: PosterQuickActionType.watchlist,
-                      quickActionActive: media.isInWatchlist,
                     );
                   },
                 ),
@@ -2048,7 +2148,6 @@ class _PosterMediaCardPreviewScreenState
                         media,
                         showStatusDock: false,
                         quickActionType: PosterQuickActionType.watchlist,
-                        quickActionActive: false,
                       ),
                     );
                   },
@@ -2102,7 +2201,6 @@ class _PosterMediaCardPreviewScreenState
                       width: 138,
                       statusContext: PosterStatusContext.favourite,
                       quickActionType: PosterQuickActionType.favourite,
-                      quickActionActive: true,
                     );
                   },
                 ),
@@ -2134,7 +2232,6 @@ class _PosterMediaCardPreviewScreenState
                         showUserRating: true,
                         showStatusDock: false,
                         quickActionType: PosterQuickActionType.watchlist,
-                        quickActionActive: true,
                       ),
                     );
                   },

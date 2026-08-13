@@ -57,6 +57,17 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String posterNewEpisodeBadge(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count NEW',
+      one: 'NEW',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get posterNewContent => 'NEW';
 
   @override

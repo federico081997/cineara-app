@@ -21,6 +21,14 @@ extension PosterMediaCardLocalization on AppLocalizations {
       collectionCount: posterCollectionCount,
       progress: posterProgress,
       newContent: posterNewContent,
+      newContentBadge: (PosterNewContentType type, int? count) {
+        return switch (type) {
+          PosterNewContentType.release => posterNewContent,
+
+          PosterNewContentType.episodes =>
+            count == null ? posterNewContent : posterNewEpisodeBadge(count),
+        };
+      },
       newContentDescription: (PosterNewContentType type, int? count) {
         return switch (type) {
           PosterNewContentType.release => posterNewRelease,
