@@ -1,56 +1,87 @@
 import 'package:flutter/material.dart';
 
-/// Defines Cineara-specific theme values that are not covered by Flutter's
-/// standard ThemeData, such as progress, skeleton, backdrop and other semantic
-/// UI colors.
-
+/// Cineara-specific semantic colours that are not represented by Material's
+/// standard [ColorScheme].
+///
+/// These values may differ between light, dark, and future themes.
 @immutable
-class CinearaThemeExtension extends ThemeExtension<CinearaThemeExtension> {
+final class CinearaThemeExtension
+    extends ThemeExtension<CinearaThemeExtension> {
   const CinearaThemeExtension({
     required this.heroOverlay,
+    required this.artworkOverlaySurface,
+    required this.artworkOverlayOutline,
     required this.skeletonBase,
     required this.skeletonHighlight,
     required this.progressTrack,
     required this.posterPlaceholder,
-    required this.artworkOverlaySurface,
-    required this.artworkOverlayOutline,
+    required this.actionSurface,
+    required this.actionSurfacePressed,
+    required this.actionOutline,
   });
 
-  final Color heroOverlay;
-  final Color skeletonBase;
-  final Color skeletonHighlight;
-  final Color progressTrack;
-  final Color posterPlaceholder;
+  // Artwork
 
-  /// Neutral surface used by controls displayed over unpredictable artwork.
-  ///
-  /// Examples include external-rating pills, personal-rating pills, and
-  /// passive status docks.
+  /// Overlay applied over hero artwork for readability.
+  final Color heroOverlay;
+
+  /// Surface for controls displayed over unpredictable artwork.
   final Color artworkOverlaySurface;
 
-  /// Outline used around neutral controls displayed over artwork.
+  /// Outline for controls displayed over unpredictable artwork.
   final Color artworkOverlayOutline;
+
+  // Loading and media
+
+  /// Base colour used by loading skeletons.
+  final Color skeletonBase;
+
+  /// Highlight colour used by loading skeletons.
+  final Color skeletonHighlight;
+
+  /// Background track for progress indicators.
+  final Color progressTrack;
+
+  /// Placeholder colour used when poster artwork is unavailable.
+  final Color posterPlaceholder;
+
+  // Actions
+
+  /// Surface for custom app-level actions such as Search and Notifications.
+  final Color actionSurface;
+
+  /// Pressed or selected state of [actionSurface].
+  final Color actionSurfacePressed;
+
+  /// Outline used around app-level action controls.
+  final Color actionOutline;
 
   @override
   CinearaThemeExtension copyWith({
     Color? heroOverlay,
+    Color? artworkOverlaySurface,
+    Color? artworkOverlayOutline,
     Color? skeletonBase,
     Color? skeletonHighlight,
     Color? progressTrack,
     Color? posterPlaceholder,
-    Color? artworkOverlaySurface,
-    Color? artworkOverlayOutline,
+    Color? actionSurface,
+    Color? actionSurfacePressed,
+    Color? actionOutline,
   }) {
     return CinearaThemeExtension(
       heroOverlay: heroOverlay ?? this.heroOverlay,
-      skeletonBase: skeletonBase ?? this.skeletonBase,
-      skeletonHighlight: skeletonHighlight ?? this.skeletonHighlight,
-      progressTrack: progressTrack ?? this.progressTrack,
-      posterPlaceholder: posterPlaceholder ?? this.posterPlaceholder,
       artworkOverlaySurface:
           artworkOverlaySurface ?? this.artworkOverlaySurface,
       artworkOverlayOutline:
           artworkOverlayOutline ?? this.artworkOverlayOutline,
+      skeletonBase: skeletonBase ?? this.skeletonBase,
+      skeletonHighlight: skeletonHighlight ?? this.skeletonHighlight,
+      progressTrack: progressTrack ?? this.progressTrack,
+      posterPlaceholder: posterPlaceholder ?? this.posterPlaceholder,
+      actionSurface: actionSurface ?? this.actionSurface,
+      actionSurfacePressed: actionSurfacePressed ?? this.actionSurfacePressed,
+      actionOutline: actionOutline ?? this.actionOutline,
     );
   }
 
@@ -62,6 +93,16 @@ class CinearaThemeExtension extends ThemeExtension<CinearaThemeExtension> {
 
     return CinearaThemeExtension(
       heroOverlay: Color.lerp(heroOverlay, other.heroOverlay, t)!,
+      artworkOverlaySurface: Color.lerp(
+        artworkOverlaySurface,
+        other.artworkOverlaySurface,
+        t,
+      )!,
+      artworkOverlayOutline: Color.lerp(
+        artworkOverlayOutline,
+        other.artworkOverlayOutline,
+        t,
+      )!,
       skeletonBase: Color.lerp(skeletonBase, other.skeletonBase, t)!,
       skeletonHighlight: Color.lerp(
         skeletonHighlight,
@@ -74,16 +115,28 @@ class CinearaThemeExtension extends ThemeExtension<CinearaThemeExtension> {
         other.posterPlaceholder,
         t,
       )!,
-      artworkOverlaySurface: Color.lerp(
-        artworkOverlaySurface,
-        other.artworkOverlaySurface,
+      actionSurface: Color.lerp(actionSurface, other.actionSurface, t)!,
+      actionSurfacePressed: Color.lerp(
+        actionSurfacePressed,
+        other.actionSurfacePressed,
         t,
       )!,
-      artworkOverlayOutline: Color.lerp(
-        artworkOverlayOutline,
-        other.artworkOverlayOutline,
-        t,
-      )!,
+      actionOutline: Color.lerp(actionOutline, other.actionOutline, t)!,
     );
+  }
+}
+
+/// Provides convenient access to Cineara-specific theme values.
+extension CinearaThemeDataExtension on ThemeData {
+  CinearaThemeExtension get cineara {
+    final extension = this.extension<CinearaThemeExtension>();
+
+    if (extension == null) {
+      throw StateError(
+        'CinearaThemeExtension is missing from the current ThemeData.',
+      );
+    }
+
+    return extension;
   }
 }

@@ -13,8 +13,10 @@ license = "LicenseRef-Cineara-Custom"
 license-files = ["LICENSE.md"]
 dependencies = [
   "fastapi>=0.139.2,<1.0.0",
+  "httpx>=0.28.1",
   "pydantic>=2.13.4",
   "pydantic-settings>=2.14.2,<3.0.0",
+  "redis>=8.1.0",
   "uvicorn[standard]>=0.35.0,<1.0.0",
 ]
 
@@ -25,24 +27,23 @@ cineara-scheduler = "cineara.scheduler:main"
 [dependency-groups]
 dev = [
   "alembic>=1.16.0,<2.0.0",
-  "httpx>=0.28.1,<1.0.0",
   "mypy>=2.3.0,<3.0.0",
   "pytest>=9.0.0,<10.0.0",
   "ruff>=0.16.1,<1.0.0",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cineara"]
+packages = ["app"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
-pythonpath = ["src"]
+pythonpath = ["app"]
 testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 79
 target-version = "py312"
-src = ["src", "tests"]
+src = ["app", "tests"]
 
 [tool.ruff.lint]
 select = [
@@ -76,9 +77,5 @@ line-ending = "lf"
 python_version = "3.12"
 strict = true
 warn_unused_configs = true
-files = ["src"]
+files = ["app"]
 plugins = ["pydantic.mypy"]
-
-[[tool.mypy.overrides]]
-module = "uvicorn.*"
-ignore_missing_imports = true

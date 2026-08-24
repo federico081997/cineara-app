@@ -1,0 +1,205 @@
+{
+  "@@locale": "zh",
+  "appTitle": "Cineara",
+  "@appTitle": {
+    "description": "应用名称。"
+  },
+  "routeErrorTitle": "页面无法打开",
+  "@routeErrorTitle": {
+    "description": "Cineara 无法打开所请求的页面时显示的标题。"
+  },
+  "routeErrorMessage": "无法打开此页面，请返回首页后重试。",
+  "@routeErrorMessage": {
+    "description": "Cineara 无法打开所请求的页面时显示的提示信息。"
+  },
+  "routeErrorGoHome": "返回首页",
+  "@routeErrorGoHome": {
+    "description": "从错误页面返回首页的按钮标签。"
+  },
+  "navigationHome": "首页",
+  "@navigationHome": {
+    "description": "主底部导航栏中“首页”入口的标签。"
+  },
+  "navigationDiscover": "发现",
+  "@navigationDiscover": {
+    "description": "主底部导航栏中“发现”入口的标签。"
+  },
+  "navigationLibrary": "资料库",
+  "@navigationLibrary": {
+    "description": "主底部导航栏中“资料库”入口的标签，用于访问用户收藏、追踪和管理的影视内容。"
+  },
+  "navigationProfile": "我的",
+  "@navigationProfile": {
+    "description": "主底部导航栏中“我的”入口的标签，用于访问个人资料、统计、成就和设置等内容。"
+  },
+  "topBarSearch": "搜索",
+  "@topBarSearch": {
+    "description": "顶部应用栏中全局搜索按钮的无障碍标签和提示文本。"
+  },
+  "topBarNotifications": "通知",
+  "@topBarNotifications": {
+    "description": "顶部应用栏中通知按钮的无障碍标签和提示文本。"
+  },
+  "topBarOpenProfileMenu": "打开个人资料菜单",
+  "@topBarOpenProfileMenu": {
+    "description": "顶部应用栏中个人资料快捷操作菜单的无障碍标签和提示文本。"
+  },
+  "posterStatusNotStarted": "尚未观看",
+  "@posterStatusNotStarted": {
+    "description": "用于辅助功能，表示用户尚未开始观看该内容。"
+  },
+  "posterStatusWatching": "正在观看",
+  "@posterStatusWatching": {
+    "description": "用于辅助功能，表示用户正在观看该内容。"
+  },
+  "posterStatusCaughtUp": "已追至最新",
+  "@posterStatusCaughtUp": {
+    "description": "用于辅助功能，表示用户已看完当前所有已更新的剧集。"
+  },
+  "posterStatusCompleted": "已看完",
+  "@posterStatusCompleted": {
+    "description": "用于辅助功能，表示用户已完整看完该内容。"
+  },
+  "posterStatusRewatching": "正在重看",
+  "@posterStatusRewatching": {
+    "description": "用于辅助功能，表示用户正在重新观看该内容。"
+  },
+  "posterStatusOnHold": "暂停观看",
+  "@posterStatusOnHold": {
+    "description": "用于辅助功能，表示用户暂时暂停观看该内容。"
+  },
+  "posterStatusDropped": "已停止观看",
+  "@posterStatusDropped": {
+    "description": "用于辅助功能，表示用户已决定不再继续观看该内容。"
+  },
+  "posterFavourite": "已加入最爱",
+  "@posterFavourite": {
+    "description": "用于辅助功能，表示该内容已加入用户的最爱。"
+  },
+  "posterWatchlist": "已加入想看",
+  "@posterWatchlist": {
+    "description": "用于辅助功能，表示该内容已加入用户的想看列表。"
+  },
+  "posterUserRating": "你的评分：{rating}",
+  "@posterUserRating": {
+    "description": "用于辅助功能，显示用户对该内容的个人评分。",
+    "placeholders": {
+      "rating": {
+        "type": "String",
+        "example": "9.5"
+      }
+    }
+  },
+  "posterCollectionCount": "已加入 {count} 个收藏夹",
+  "@posterCollectionCount": {
+    "description": "用于辅助功能，说明该内容已被加入多少个用户收藏夹。",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "posterProgress": "观看进度：{percentage}%",
+  "@posterProgress": {
+    "description": "用于辅助功能，以百分比显示观看进度。",
+    "placeholders": {
+      "percentage": {
+        "type": "int",
+        "example": "62"
+      }
+    }
+  },
+  "posterNewEpisodeBadge": "新增 {count} 集",
+  "@posterNewEpisodeBadge": {
+    "description": "显示在海报上的简短标签，表示有新剧集可观看。",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "posterNewContent": "新",
+  "@posterNewContent": {
+    "description": "用于新内容或新剧集的简短视觉标签。"
+  },
+  "posterNewRelease": "新上线",
+  "@posterNewRelease": {
+    "description": "用于辅助功能，表示该影视内容为近期新上线内容。"
+  },
+  "posterNewEpisodesAvailable": "有新集更新",
+  "@posterNewEpisodesAvailable": {
+    "description": "用于辅助功能，在有新剧集更新但数量未知时使用。"
+  },
+  "posterNewEpisodeCount": "有 {count} 集新内容可看",
+  "@posterNewEpisodeCount": {
+    "description": "用于辅助功能，说明当前可观看的新剧集数量。",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "posterAddToWatchlist": "将 {title} 加入想看",
+  "@posterAddToWatchlist": {
+    "description": "用于辅助功能，将影视内容快速加入想看列表。",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterRemoveFromWatchlist": "将 {title} 从想看中移除",
+  "@posterRemoveFromWatchlist": {
+    "description": "用于辅助功能，将影视内容从想看列表中移除。",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterAddToFavourites": "将 {title} 加入最爱",
+  "@posterAddToFavourites": {
+    "description": "用于辅助功能，将影视内容快速加入最爱。",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterRemoveFromFavourites": "将 {title} 从最爱中移除",
+  "@posterRemoveFromFavourites": {
+    "description": "用于辅助功能，将影视内容从最爱中移除。",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterMarkAsWatched": "将 {title} 标记为已看",
+  "@posterMarkAsWatched": {
+    "description": "用于辅助功能，将影视内容快速标记为已看。",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  },
+  "posterMarkAsUnwatched": "将 {title} 标记为未看",
+  "@posterMarkAsUnwatched": {
+    "description": "用于辅助功能，将影视内容快速标记为未看。",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Perfect Days"
+      }
+    }
+  }
+}

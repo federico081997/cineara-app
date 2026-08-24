@@ -20,6 +20,7 @@ dependencies:
 
   cineara_design_system:
     path: ../packages/cineara_design_system
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

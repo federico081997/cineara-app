@@ -1,9 +1,8 @@
 """Smoke tests for the Phase 1 FastAPI service."""
 
-from fastapi.testclient import TestClient
-
 from cineara.dependencies import DependencyStatus, get_dependency_status
 from cineara.main import app
+from fastapi.testclient import TestClient
 
 
 def test_root_returns_service_metadata(client: TestClient) -> None:

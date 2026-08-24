@@ -1,5 +1,49 @@
 {
   "@@locale": "it",
+  "appTitle": "Cineara",
+  "@appTitle": {
+    "description": "Nome dell'applicazione."
+  },
+  "routeErrorTitle": "Pagina non disponibile",
+  "@routeErrorTitle": {
+    "description": "Titolo mostrato quando Cineara non riesce ad aprire una pagina o un percorso richiesto."
+  },
+  "routeErrorMessage": "Non è stato possibile aprire questa pagina. Torna alla Home e riprova.",
+  "@routeErrorMessage": {
+    "description": "Messaggio mostrato quando Cineara non riesce ad aprire una pagina o un percorso richiesto."
+  },
+  "routeErrorGoHome": "Torna alla Home",
+  "@routeErrorGoHome": {
+    "description": "Etichetta del pulsante che riporta alla Home dalla pagina di errore."
+  },
+  "navigationHome": "Home",
+  "@navigationHome": {
+    "description": "Etichetta della sezione Home nella barra di navigazione principale in basso."
+  },
+  "navigationDiscover": "Scopri",
+  "@navigationDiscover": {
+    "description": "Etichetta della sezione Scopri nella barra di navigazione principale in basso."
+  },
+  "navigationLibrary": "Libreria",
+  "@navigationLibrary": {
+    "description": "Etichetta della sezione Libreria nella barra di navigazione principale in basso."
+  },
+  "navigationProfile": "Profilo",
+  "@navigationProfile": {
+    "description": "Etichetta della sezione Profilo nella barra di navigazione principale in basso."
+  },
+  "topBarSearch": "Cerca",
+  "@topBarSearch": {
+    "description": "Etichetta di accessibilità e suggerimento per il pulsante di ricerca globale nella barra superiore dell'app."
+  },
+  "topBarNotifications": "Notifiche",
+  "@topBarNotifications": {
+    "description": "Etichetta di accessibilità e suggerimento per il pulsante delle notifiche nella barra superiore dell'app."
+  },
+  "topBarOpenProfileMenu": "Apri il menu del profilo",
+  "@topBarOpenProfileMenu": {
+    "description": "Etichetta di accessibilità e suggerimento per il menu delle azioni rapide del profilo nella barra superiore dell'app."
+  },
   "posterStatusNotStarted": "Non iniziato",
   "@posterStatusNotStarted": {
     "description": "Stato di un titolo che l'utente non ha ancora iniziato."

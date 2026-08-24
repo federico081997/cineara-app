@@ -1,5 +1,49 @@
 {
   "@@locale": "en",
+  "appTitle": "Cineara",
+  "@appTitle": {
+    "description": "Application title."
+  },
+  "routeErrorTitle": "Page unavailable",
+  "@routeErrorTitle": {
+    "description": "Title shown when Cineara cannot open a requested route or page."
+  },
+  "routeErrorMessage": "We couldn't open this page. Return to Home and try again.",
+  "@routeErrorMessage": {
+    "description": "Message shown when Cineara cannot open a requested route or page."
+  },
+  "routeErrorGoHome": "Go to Home",
+  "@routeErrorGoHome": {
+    "description": "Button label that navigates from the route error page back to Home."
+  },
+  "navigationHome": "Home",
+  "@navigationHome": {
+    "description": "Label for the Home destination in the main bottom navigation."
+  },
+  "navigationDiscover": "Discover",
+  "@navigationDiscover": {
+    "description": "Label for the Discover destination in the main bottom navigation."
+  },
+  "navigationLibrary": "Library",
+  "@navigationLibrary": {
+    "description": "Label for the Library destination in the main bottom navigation."
+  },
+  "navigationProfile": "Profile",
+  "@navigationProfile": {
+    "description": "Label for the Profile destination in the main bottom navigation."
+  },
+  "topBarSearch": "Search",
+  "@topBarSearch": {
+    "description": "Accessibility label and tooltip for the global search action in the top application bar."
+  },
+  "topBarNotifications": "Notifications",
+  "@topBarNotifications": {
+    "description": "Accessibility label and tooltip for the global notifications action in the top application bar."
+  },
+  "topBarOpenProfileMenu": "Open profile menu",
+  "@topBarOpenProfileMenu": {
+    "description": "Accessibility label and tooltip for the profile quick-action menu in the top application bar."
+  },
   "posterStatusNotStarted": "Not started",
   "@posterStatusNotStarted": {
     "description": "Accessibility label for media the user has not started."

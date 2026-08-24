@@ -1,32 +1,51 @@
 import 'package:cineara_design_system/cineara_design_system.dart';
-import 'package:cineara_mobile/features/theme_preview/poster_media_card_preview.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../l10n/app_localizations.dart';
 
-class CinearaApp extends StatelessWidget {
-  const CinearaApp({super.key});
+final class CinearaApp extends StatelessWidget {
+  const CinearaApp({
+    required this.router,
+    this.appTheme = CinearaAppTheme.system,
+    this.locale,
+    super.key,
+  });
+
+  /// Root application router.
+  final GoRouter router;
+
+  /// Current user-selected application theme.
+  ///
+  /// Defaults to following the operating system light or dark preference.
+  final CinearaAppTheme appTheme;
+
+  /// Current user-selected locale.
+  ///
+  /// When null, Flutter uses the device locale.
+  final Locale? locale;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Cineara',
+    return MaterialApp.router(
+      onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
       debugShowCheckedModeBanner: false,
 
-      // Force Italian while testing localization.
-      locale: const Locale('it'),
+      // Routing
+      routerConfig: router,
+      restorationScopeId: 'cineara_app',
 
-      // Localization generated from the ARB files in lib/l10n.
+      // Localization
+      locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
 
-      theme: CinearaLightTheme.theme,
-      darkTheme: CinearaDarkTheme.theme,
-
-      // Temporary while designing the dark theme.
-      themeMode: ThemeMode.light,
-
-      home: const PosterMediaCardPreviewScreen(),
+      // Theme
+      theme: CinearaAppThemes.lightTheme(appTheme),
+      darkTheme: CinearaAppThemes.darkTheme(appTheme),
+      highContrastTheme: CinearaAppThemes.highContrastLightTheme(appTheme),
+      highContrastDarkTheme: CinearaAppThemes.highContrastDarkTheme(appTheme),
+      themeMode: CinearaAppThemes.themeMode(appTheme),
     );
   }
 }
