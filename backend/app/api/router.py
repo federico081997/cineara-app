@@ -1,49 +1,20 @@
-"""Top-level API router for the Cineara backend.
+"""Versioned HTTP router assembly for the Cineara API.
 
-This module composes Cineara's feature routers under the versioned public API
-prefix.
+The API version prefix is owned exclusively by this module. Feature routers
+define only their feature-local prefixes, for example Search owns ``/search``.
 
-Feature modules own only their feature-specific paths.
-
-For example:
-
-    modules/search.py
-
-defines:
-
-    /search
-    /search/enrich
-
-while this module adds:
-
-    /api/v1
-
-producing the final public endpoints:
-
-    GET  /api/v1/search
-    POST /api/v1/search/enrich
-
-Future Search endpoints should remain inside the Search module.
-
-For example:
-
-    GET /api/v1/search/suggestions
-
-would be implemented in:
-
-    app/modules/search.py
-
-rather than by creating another Search router or module.
+Keeping versioning here prevents duplicated prefixes and allows feature modules
+to remain reusable within later API versions.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.modules.search import router as search_router
+from app.modules.search.api import router as search_router
 
 # =============================================================================
-# Public API router
+# API router
 # =============================================================================
 
 
@@ -52,30 +23,10 @@ api_router = APIRouter(
 )
 
 # =============================================================================
-# Search
-# =============================================================================
-#
-# modules/search.py defines:
-#
-#     GET  /search
-#     POST /search/enrich
-#
-# Combined with this router's /api/v1 prefix:
-#
-#     GET  /api/v1/search
-#     POST /api/v1/search/enrich
+# Feature routers
 # =============================================================================
 
 
 api_router.include_router(
     search_router,
 )
-
-# =============================================================================
-# Public exports
-# =============================================================================
-
-
-__all__ = [
-    "api_router",
-]

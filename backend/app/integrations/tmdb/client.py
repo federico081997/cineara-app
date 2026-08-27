@@ -1,1065 +1,252 @@
-"""Asynchronous TMDB API client used by Cineara.
+"""High-level TMDB integration client.
 
-``TmdbClient`` is Cineara's single direct network boundary for TMDB.
+This module exposes Cineara's public TMDB integration facade.
 
-Feature modules such as Search, Discover, Home and Media Details must call this
-client rather than constructing TMDB HTTP requests themselves.
+``TmdbClient`` composes:
 
-Supported Search operations
----------------------------
+- one shared ``TmdbRequestClient``;
+- TMDB Search endpoints;
+- TMDB Trending endpoints;
+- TMDB Movie endpoints;
+- TMDB TV endpoints.
 
-    All
-        -> GET /search/multi
+The facade intentionally keeps endpoint-specific logic inside the corresponding
+``endpoints`` modules. It is responsible only for:
 
-    Movies
-        -> GET /search/movie
+- constructing the shared request transport;
+- constructing resource endpoint groups;
+- exposing those groups through stable properties;
+- delegating common client configuration;
+- managing the shared HTTP-client lifecycle.
 
-    TV
-        -> GET /search/tv
+It does not own:
 
-    People
-        -> GET /search/person
+- endpoint paths;
+- query-parameter validation;
+- HTTP request implementation;
+- retries;
+- caching;
+- Cineara domain models;
+- media classification;
+- persistence;
+- Search orchestration;
+- image URL construction;
+- user-library state.
 
-Selective detail enrichment
----------------------------
-
-Search may selectively request richer details when the Search payload does not
-contain enough information for a high-confidence classification:
-
-    movie
-        -> GET /movie/{movie_id}
-
-    tv
-        -> GET /tv/{series_id}
-
-The client does NOT decide whether enrichment is necessary and does NOT cache
-the response. Higher application layers own those decisions.
-
-Typical flow:
-
-    Search result
-        ↓
-    classify with Search metadata
-        ↓
-    classification says enrichment may be useful
-        ↓
-    cache lookup
-        ↓
-    cache miss
-        ↓
-    TmdbClient.get_movie_details(...)
-        or
-    TmdbClient.get_tv_details(...)
-        ↓
-    cache details
-        ↓
-    reclassify
-
-The returned top-level detail model is intentionally reusable by later media
-detail pages. If Search already fetched it, higher layers should normally reuse
-the cached response instead of immediately requesting the same resource again.
-
-Responsibilities
-----------------
-
-This client owns:
-
-- TMDB authentication;
-- URL/request construction;
-- request-level localization parameters;
-- timeout handling;
-- transport error handling;
-- HTTP status handling;
-- JSON decoding;
-- raw TMDB Pydantic-model validation.
-
-This client does NOT own:
-
-- Search minimum-query-length policy;
-- frontend debounce behavior;
-- Search-result caching;
-- media-details caching;
-- enrichment-selection policy;
-- enrichment batching;
-- concurrency limits;
-- request coalescing/single-flight behavior;
-- classification;
-- mapping into Cineara/Flutter-facing models;
-- user-library state;
-- content-policy decisions.
-
-Lifecycle
----------
-
-Create one ``TmdbClient`` for the application lifetime and reuse it.
-
-For example, FastAPI lifespan can construct one instance, store it on
-``app.state``, and close it during application shutdown.
-
-Do not create a new ``httpx.AsyncClient`` for every TMDB request.
+The client is designed to be created once for the application lifetime and
+closed during application shutdown.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, TypeVar
+from types import TracebackType
 
 import httpx
-from pydantic import BaseModel, SecretStr, ValidationError
+from pydantic import SecretStr
 
-from .models.movie import TmdbMovieDetails
-from .models.search import (
-    TmdbMovieSearchResult,
-    TmdbMultiSearchResult,
-    TmdbPersonSearchResult,
-    TmdbSearchPage,
-    TmdbTvSearchResult,
-)
-from .models.tv import TmdbTvDetails
+from .endpoints.movies import TmdbMovieEndpoints
+from .endpoints.search import TmdbSearchEndpoints
+from .endpoints.trending import TmdbTrendingEndpoints
+from .endpoints.tv import TmdbTvEndpoints
+from .request import TmdbRequestClient
 
 # =============================================================================
-# Defaults
-# =============================================================================
-
-
-DEFAULT_TMDB_BASE_URL = "https://api.themoviedb.org/3"
-DEFAULT_TMDB_LANGUAGE = "en-US"
-DEFAULT_TMDB_TIMEOUT_SECONDS = 10.0
-
-# =============================================================================
-# Endpoint paths
-# =============================================================================
-#
-# Static Search paths are centralized here. Dynamic detail paths are built from
-# validated identifiers in their respective public methods.
-# =============================================================================
-
-
-_SEARCH_MULTI_PATH = "/search/multi"
-_SEARCH_MOVIE_PATH = "/search/movie"
-_SEARCH_TV_PATH = "/search/tv"
-_SEARCH_PERSON_PATH = "/search/person"
-
-# =============================================================================
-# Generic model type
-# =============================================================================
-
-
-_ModelT = TypeVar(
-    "_ModelT",
-    bound=BaseModel,
-)
-
-
-# =============================================================================
-# TMDB client exceptions
-# =============================================================================
-
-
-class TmdbClientError(Exception):
-    """Base exception for failures originating from ``TmdbClient``."""
-
-
-class TmdbRequestError(TmdbClientError):
-    """Raised when a request cannot successfully reach TMDB."""
-
-
-class TmdbTimeoutError(TmdbRequestError):
-    """Raised when a request to TMDB exceeds its configured timeout."""
-
-
-class TmdbHttpError(TmdbClientError):
-    """Raised when TMDB returns a non-successful HTTP response."""
-
-    def __init__(
-        self,
-        *,
-        status_code: int,
-        message: str,
-        retry_after_seconds: int | None = None,
-    ) -> None:
-        """Initialize a TMDB HTTP error.
-
-        ``retry_after_seconds`` is populated when TMDB returns a usable
-        ``Retry-After`` header, most notably for HTTP 429 responses. The client
-        deliberately does not retry automatically because retry/concurrency
-        policy belongs to the orchestration layer.
-        """
-
-        self.status_code = status_code
-        self.message = message
-        self.retry_after_seconds = retry_after_seconds
-
-        suffix = (
-            f" Retry after {retry_after_seconds} seconds."
-            if retry_after_seconds is not None
-            else ""
-        )
-
-        super().__init__(
-            f"TMDB request failed with HTTP {status_code}: {message}.{suffix}"
-        )
-
-
-class TmdbResponseError(TmdbClientError):
-    """Raised when a successful TMDB response cannot be parsed."""
-
-
-# =============================================================================
-# Client
+# TMDB client
 # =============================================================================
 
 
 class TmdbClient:
-    """Asynchronous client for TMDB's API.
+    """Facade for Cineara's TMDB integration.
 
     Parameters
     ----------
     access_token:
-        TMDB API Read Access Token.
-
-        ``str`` and Pydantic ``SecretStr`` are accepted so application
-        configuration can pass the token without exposing it.
+        TMDB API Read Access Token used for Bearer authentication.
 
     base_url:
         TMDB API base URL.
 
+        Runtime configuration belongs to Cineara's application settings and is
+        therefore supplied explicitly when the client is constructed.
+
     language:
         Default TMDB localization language.
 
-        Individual requests may override this.
+        Endpoint methods may override this value for individual requests.
 
     timeout_seconds:
-        Maximum duration allowed for each TMDB request.
+        Maximum duration allowed for an individual TMDB request.
 
     http_client:
         Optional externally managed ``httpx.AsyncClient``.
 
-        When supplied, ``TmdbClient`` does not close it. When omitted,
-        ``TmdbClient`` creates and owns one reusable client.
+        When omitted, ``TmdbRequestClient`` creates and owns its HTTP client.
+
+        When supplied, lifecycle ownership remains with the caller and the
+        client is not closed by ``TmdbClient``.
+
+    Notes
+    -----
+    The facade exposes endpoint groups rather than duplicating their methods.
+
+    One instance should normally exist for the FastAPI application lifetime.
+
+    Examples
+    --------
+    Search Movies::
+
+        await tmdb.search.movies(
+            query="Dune",
+            page=1,
+        )
+
+    Fetch Movie Details::
+
+        await tmdb.movies.details(
+            movie_id=438631,
+        )
+
+    Fetch Trending Content::
+
+        await tmdb.trending.all(
+            time_window="week",
+        )
     """
+
+    __slots__ = (
+        "_movies",
+        "_request",
+        "_search",
+        "_trending",
+        "_tv",
+    )
 
     def __init__(
         self,
         *,
         access_token: str | SecretStr,
-        base_url: str = DEFAULT_TMDB_BASE_URL,
-        language: str = DEFAULT_TMDB_LANGUAGE,
-        timeout_seconds: float = DEFAULT_TMDB_TIMEOUT_SECONDS,
+        base_url: str,
+        language: str,
+        timeout_seconds: float,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        """Initialize the TMDB client."""
+        """Create the TMDB facade and its endpoint groups."""
 
-        self._access_token = _normalize_access_token(
-            access_token,
-        )
-        self._base_url = _normalize_base_url(
-            base_url,
-        )
-        self._language = _normalize_language(
-            language,
-        )
-        self._timeout = _build_timeout(
-            timeout_seconds,
+        request = TmdbRequestClient(
+            access_token=access_token,
+            base_url=base_url,
+            language=language,
+            timeout_seconds=timeout_seconds,
+            http_client=http_client,
         )
 
-        if http_client is None:
-            self._http_client = httpx.AsyncClient()
-            self._owns_http_client = True
-        else:
-            self._http_client = http_client
-            self._owns_http_client = False
+        self._request = request
 
-        self._closed = False
+        self._search = TmdbSearchEndpoints(
+            request,
+        )
+
+        self._trending = TmdbTrendingEndpoints(
+            request,
+        )
+
+        self._movies = TmdbMovieEndpoints(
+            request,
+        )
+
+        self._tv = TmdbTvEndpoints(
+            request,
+        )
 
     # =========================================================================
-    # Public properties
+    # Endpoint groups
+    # =========================================================================
+
+    @property
+    def search(self) -> TmdbSearchEndpoints:
+        """Return the TMDB Search endpoint group."""
+
+        return self._search
+
+    @property
+    def trending(self) -> TmdbTrendingEndpoints:
+        """Return the TMDB Trending endpoint group."""
+
+        return self._trending
+
+    @property
+    def movies(self) -> TmdbMovieEndpoints:
+        """Return the TMDB Movie endpoint group."""
+
+        return self._movies
+
+    @property
+    def tv(self) -> TmdbTvEndpoints:
+        """Return the TMDB TV endpoint group."""
+
+        return self._tv
+
+    # =========================================================================
+    # Shared configuration
     # =========================================================================
 
     @property
     def base_url(self) -> str:
         """Return the normalized TMDB API base URL."""
 
-        return self._base_url
+        return self._request.base_url
 
     @property
     def language(self) -> str:
-        """Return the default TMDB language."""
+        """Return the configured default TMDB localization language."""
 
-        return self._language
+        return self._request.language
+
+    @property
+    def timeout_seconds(self) -> float:
+        """Return the configured per-request timeout in seconds."""
+
+        return self._request.timeout_seconds
+
+    # =========================================================================
+    # Lifecycle state
+    # =========================================================================
 
     @property
     def is_closed(self) -> bool:
-        """Return whether this client has been closed."""
+        """Return whether the underlying TMDB request client is closed."""
 
-        return self._closed
-
-    # =========================================================================
-    # Search — multi
-    # =========================================================================
-
-    async def search_multi(
-        self,
-        query: str,
-        *,
-        page: int = 1,
-        language: str | None = None,
-        include_adult: bool = False,
-    ) -> TmdbSearchPage[TmdbMultiSearchResult]:
-        """Search movies, TV shows and people in one TMDB request.
-
-        TMDB endpoint:
-
-            GET /search/multi
-        """
-
-        params = self._build_search_params(
-            query=query,
-            page=page,
-            language=language,
-            include_adult=include_adult,
-        )
-
-        return await self._get_model(
-            path=_SEARCH_MULTI_PATH,
-            params=params,
-            model=TmdbSearchPage[TmdbMultiSearchResult],
-        )
+        return self._request.is_closed
 
     # =========================================================================
-    # Search — movies
-    # =========================================================================
-
-    async def search_movies(
-        self,
-        query: str,
-        *,
-        page: int = 1,
-        language: str | None = None,
-        include_adult: bool = False,
-    ) -> TmdbSearchPage[TmdbMovieSearchResult]:
-        """Search TMDB movies.
-
-        TMDB endpoint:
-
-            GET /search/movie
-        """
-
-        params = self._build_search_params(
-            query=query,
-            page=page,
-            language=language,
-            include_adult=include_adult,
-        )
-
-        return await self._get_model(
-            path=_SEARCH_MOVIE_PATH,
-            params=params,
-            model=TmdbSearchPage[TmdbMovieSearchResult],
-        )
-
-    # =========================================================================
-    # Search — TV
-    # =========================================================================
-
-    async def search_tv(
-        self,
-        query: str,
-        *,
-        page: int = 1,
-        language: str | None = None,
-        include_adult: bool = False,
-    ) -> TmdbSearchPage[TmdbTvSearchResult]:
-        """Search TMDB television shows.
-
-        TMDB endpoint:
-
-            GET /search/tv
-
-        TV Search already provides useful factual metadata such as:
-
-            origin_country
-            original_language
-            genre_ids
-            first_air_date
-
-        This is sufficient for many Search-time classifications.
-
-        It is deliberately not assumed to be sufficient for:
-
-            Series vs Miniseries
-            K-Drama
-            C-Drama
-            J-Drama
-            Taiwanese Drama
-            Hong Kong Drama
-            Thai Drama
-            Indian Drama
-            Pakistani Drama
-            Turkish Drama
-
-        When the classification/orchestration layer marks a result as worth
-        enriching, it should check its cache and then call
-        ``get_tv_details()`` only on a cache miss.
-        """
-
-        params = self._build_search_params(
-            query=query,
-            page=page,
-            language=language,
-            include_adult=include_adult,
-        )
-
-        return await self._get_model(
-            path=_SEARCH_TV_PATH,
-            params=params,
-            model=TmdbSearchPage[TmdbTvSearchResult],
-        )
-
-    # =========================================================================
-    # Search — people
-    # =========================================================================
-
-    async def search_people(
-        self,
-        query: str,
-        *,
-        page: int = 1,
-        language: str | None = None,
-        include_adult: bool = False,
-    ) -> TmdbSearchPage[TmdbPersonSearchResult]:
-        """Search TMDB people.
-
-        TMDB endpoint:
-
-            GET /search/person
-        """
-
-        params = self._build_search_params(
-            query=query,
-            page=page,
-            language=language,
-            include_adult=include_adult,
-        )
-
-        return await self._get_model(
-            path=_SEARCH_PERSON_PATH,
-            params=params,
-            model=TmdbSearchPage[TmdbPersonSearchResult],
-        )
-
-    # =========================================================================
-    # Movie details
-    # =========================================================================
-
-    async def get_movie_details(
-        self,
-        movie_id: int,
-        *,
-        language: str | None = None,
-    ) -> TmdbMovieDetails:
-        """Retrieve top-level TMDB movie details.
-
-        TMDB endpoint:
-
-            GET /movie/{movie_id}
-
-        Cineara may use this for selective Search enrichment when the Search
-        result lacks facts required for a high-confidence classification.
-
-        Example:
-
-            Animation
-            + original_language == "ja"
-            + production-country metadata unavailable
-
-        can justify a cached movie-details lookup so Cineara can determine
-        whether the movie is Anime.
-
-        The caller owns cache lookup/storage. This method performs only the
-        validated TMDB request.
-
-        Parameters
-        ----------
-        movie_id:
-            Positive TMDB movie identifier.
-
-        language:
-            Optional request-level language override.
-        """
-
-        normalized_movie_id = _normalize_identifier(
-            movie_id,
-            field_name="movie_id",
-        )
-
-        params: dict[str, str] = {
-            "language": self._resolve_language(
-                language,
-            ),
-        }
-
-        return await self._get_model(
-            path=f"/movie/{normalized_movie_id}",
-            params=params,
-            model=TmdbMovieDetails,
-        )
-
-    # =========================================================================
-    # TV details
-    # =========================================================================
-
-    async def get_tv_details(
-        self,
-        series_id: int,
-        *,
-        language: str | None = None,
-    ) -> TmdbTvDetails:
-        """Retrieve top-level TMDB TV-series details.
-
-        TMDB endpoint:
-
-            GET /tv/{series_id}
-
-        Cineara may use this for selective Search enrichment when Search-level
-        metadata is insufficient to resolve:
-
-            Series vs Miniseries
-            regional scripted-TV classification
-
-        Movie and TV identifiers must remain in separate TMDB namespaces. A TV
-        result must therefore always come through this method rather than
-        ``get_movie_details()``.
-
-        The caller owns cache lookup/storage. This method performs only the
-        validated TMDB request.
-
-        Parameters
-        ----------
-        series_id:
-            Positive TMDB TV-series identifier.
-
-        language:
-            Optional request-level language override.
-        """
-
-        normalized_series_id = _normalize_identifier(
-            series_id,
-            field_name="series_id",
-        )
-
-        params: dict[str, str] = {
-            "language": self._resolve_language(
-                language,
-            ),
-        }
-
-        return await self._get_model(
-            path=f"/tv/{normalized_series_id}",
-            params=params,
-            model=TmdbTvDetails,
-        )
-
-    # =========================================================================
-    # Search parameter construction
-    # =========================================================================
-
-    def _build_search_params(
-        self,
-        *,
-        query: str,
-        page: int,
-        language: str | None,
-        include_adult: bool,
-    ) -> dict[str, str | int]:
-        """Build common TMDB Search query parameters.
-
-        Search product policy such as a minimum query length deliberately does
-        not live in this low-level integration client.
-        """
-
-        normalized_query = _normalize_query(
-            query,
-        )
-        normalized_page = _normalize_page(
-            page,
-        )
-        resolved_language = self._resolve_language(
-            language,
-        )
-
-        return {
-            "query": normalized_query,
-            "page": normalized_page,
-            "language": resolved_language,
-            "include_adult": ("true" if include_adult else "false"),
-        }
-
-    # =========================================================================
-    # Language
-    # =========================================================================
-
-    def _resolve_language(
-        self,
-        language: str | None,
-    ) -> str:
-        """Resolve a request-level language against the client default."""
-
-        if language is None:
-            return self._language
-
-        return _normalize_language(
-            language,
-        )
-
-    # =========================================================================
-    # Generic validated GET
-    # =========================================================================
-
-    async def _get_model(
-        self,
-        *,
-        path: str,
-        params: Mapping[str, Any] | None,
-        model: type[_ModelT],
-    ) -> _ModelT:
-        """Execute GET and validate the JSON payload into ``model``."""
-
-        self._ensure_open()
-
-        payload = await self._get_json(
-            path=path,
-            params=params,
-        )
-
-        try:
-            return model.model_validate(
-                payload,
-            )
-
-        except ValidationError as exc:
-            raise TmdbResponseError(
-                "TMDB returned a response that does not match "
-                f"{model.__name__}."
-            ) from exc
-
-    # =========================================================================
-    # Generic JSON GET
-    # =========================================================================
-
-    async def _get_json(
-        self,
-        *,
-        path: str,
-        params: Mapping[str, Any] | None = None,
-    ) -> Any:
-        """Execute an authenticated GET request and return decoded JSON."""
-
-        self._ensure_open()
-
-        url = self._build_url(
-            path,
-        )
-
-        try:
-            response = await self._http_client.get(
-                url,
-                params=params,
-                headers=self._request_headers(),
-                timeout=self._timeout,
-            )
-
-        except httpx.TimeoutException as exc:
-            raise TmdbTimeoutError(
-                f"TMDB request timed out for {path!r}."
-            ) from exc
-
-        except httpx.RequestError as exc:
-            raise TmdbRequestError(
-                f"Could not complete TMDB request for {path!r}."
-            ) from exc
-
-        if not response.is_success:
-            raise TmdbHttpError(
-                status_code=response.status_code,
-                message=_extract_error_message(
-                    response,
-                ),
-                retry_after_seconds=_extract_retry_after_seconds(
-                    response,
-                ),
-            )
-
-        try:
-            return response.json()
-
-        except ValueError as exc:
-            raise TmdbResponseError(
-                f"TMDB returned invalid JSON for {path!r}."
-            ) from exc
-
-    # =========================================================================
-    # Authentication
-    # =========================================================================
-
-    def _request_headers(self) -> dict[str, str]:
-        """Return headers required for TMDB API requests."""
-
-        return {
-            "Authorization": f"Bearer {self._access_token}",
-            "Accept": "application/json",
-        }
-
-    # =========================================================================
-    # URL construction
-    # =========================================================================
-
-    def _build_url(
-        self,
-        path: str,
-    ) -> str:
-        """Build a complete TMDB API URL from an endpoint path."""
-
-        normalized_path = path.strip()
-
-        if not normalized_path:
-            raise ValueError("TMDB endpoint path must not be blank.")
-
-        if not normalized_path.startswith("/"):
-            normalized_path = f"/{normalized_path}"
-
-        return f"{self._base_url}{normalized_path}"
-
-    # =========================================================================
-    # Lifecycle
+    # Lifecycle management
     # =========================================================================
 
     async def aclose(self) -> None:
-        """Close resources owned by this TMDB client."""
+        """Close resources owned by the underlying request client.
 
-        if self._closed:
-            return
+        Calling this method more than once is safe.
 
-        self._closed = True
+        An externally supplied ``httpx.AsyncClient`` remains owned by the
+        caller and is not closed by ``TmdbClient``.
+        """
 
-        if self._owns_http_client:
-            await self._http_client.aclose()
-
-    async def close(self) -> None:
-        """Alias for ``aclose()`` for application-lifespan readability."""
-
-        await self.aclose()
+        await self._request.aclose()
 
     async def __aenter__(self) -> TmdbClient:
-        """Enter an asynchronous context manager."""
+        """Enter an asynchronous context-manager scope."""
 
-        self._ensure_open()
+        if self.is_closed:
+            raise RuntimeError("Cannot enter a closed TmdbClient context.")
 
         return self
 
     async def __aexit__(
         self,
-        exc_type: object,
-        exc_value: object,
-        traceback: object,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None:
-        """Exit an asynchronous context manager."""
+        """Close owned resources when leaving an async context."""
 
         await self.aclose()
-
-    # =========================================================================
-    # Lifecycle validation
-    # =========================================================================
-
-    def _ensure_open(self) -> None:
-        """Raise when code attempts to use a closed client."""
-
-        if self._closed:
-            raise TmdbClientError("TmdbClient has already been closed.")
-
-
-# =============================================================================
-# Access-token normalization
-# =============================================================================
-
-
-def _normalize_access_token(
-    value: str | SecretStr,
-) -> str:
-    """Normalize and validate the TMDB API Read Access Token."""
-
-    if isinstance(
-        value,
-        SecretStr,
-    ):
-        token = value.get_secret_value()
-
-    elif isinstance(
-        value,
-        str,
-    ):
-        token = value
-
-    else:
-        raise TypeError("TMDB access token must be a string or SecretStr.")
-
-    normalized = token.strip()
-
-    if not normalized:
-        raise ValueError("TMDB access token must not be blank.")
-
-    return normalized
-
-
-# =============================================================================
-# Base-URL normalization
-# =============================================================================
-
-
-def _normalize_base_url(
-    value: str,
-) -> str:
-    """Normalize and validate the TMDB API base URL."""
-
-    if not isinstance(
-        value,
-        str,
-    ):
-        raise TypeError("TMDB base URL must be a string.")
-
-    normalized = value.strip().rstrip("/")
-
-    if not normalized:
-        raise ValueError("TMDB base URL must not be blank.")
-
-    if not normalized.lower().startswith("https://"):
-        raise ValueError("TMDB base URL must use HTTPS.")
-
-    return normalized
-
-
-# =============================================================================
-# Query normalization
-# =============================================================================
-
-
-def _normalize_query(
-    value: str,
-) -> str:
-    """Normalize a TMDB Search query."""
-
-    if not isinstance(
-        value,
-        str,
-    ):
-        raise TypeError("TMDB Search query must be a string.")
-
-    normalized = value.strip()
-
-    if not normalized:
-        raise ValueError("TMDB Search query must not be blank.")
-
-    return normalized
-
-
-# =============================================================================
-# Page normalization
-# =============================================================================
-
-
-def _normalize_page(
-    value: int,
-) -> int:
-    """Validate a TMDB pagination value."""
-
-    # bool subclasses int in Python.
-    if isinstance(
-        value,
-        bool,
-    ) or not isinstance(
-        value,
-        int,
-    ):
-        raise TypeError("TMDB page must be an integer.")
-
-    if value < 1:
-        raise ValueError("TMDB page must be at least 1.")
-
-    return value
-
-
-# =============================================================================
-# Identifier normalization
-# =============================================================================
-
-
-def _normalize_identifier(
-    value: int,
-    *,
-    field_name: str,
-) -> int:
-    """Validate a positive TMDB numeric identifier."""
-
-    if isinstance(
-        value,
-        bool,
-    ) or not isinstance(
-        value,
-        int,
-    ):
-        raise TypeError(f"{field_name} must be an integer.")
-
-    if value <= 0:
-        raise ValueError(f"{field_name} must be greater than 0.")
-
-    return value
-
-
-# =============================================================================
-# Language normalization
-# =============================================================================
-
-
-def _normalize_language(
-    value: str,
-) -> str:
-    """Normalize a TMDB language value."""
-
-    if not isinstance(
-        value,
-        str,
-    ):
-        raise TypeError("TMDB language must be a string.")
-
-    normalized = value.strip().replace(
-        "_",
-        "-",
-    )
-
-    if not normalized:
-        raise ValueError("TMDB language must not be blank.")
-
-    return normalized
-
-
-# =============================================================================
-# Timeout construction
-# =============================================================================
-
-
-def _build_timeout(
-    seconds: float,
-) -> httpx.Timeout:
-    """Build the HTTPX timeout used by TMDB requests."""
-
-    if isinstance(
-        seconds,
-        bool,
-    ):
-        raise TypeError("TMDB timeout must be a positive number.")
-
-    try:
-        normalized = float(
-            seconds,
-        )
-
-    except (
-        TypeError,
-        ValueError,
-    ) as exc:
-        raise TypeError("TMDB timeout must be a positive number.") from exc
-
-    if normalized <= 0:
-        raise ValueError("TMDB timeout must be greater than 0.")
-
-    return httpx.Timeout(
-        normalized,
-    )
-
-
-# =============================================================================
-# TMDB error extraction
-# =============================================================================
-
-
-def _extract_error_message(
-    response: httpx.Response,
-) -> str:
-    """Extract a safe human-readable message from a TMDB error response."""
-
-    try:
-        payload = response.json()
-
-    except ValueError:
-        payload = None
-
-    if isinstance(
-        payload,
-        dict,
-    ):
-        status_message = payload.get(
-            "status_message",
-        )
-
-        if isinstance(
-            status_message,
-            str,
-        ):
-            normalized = status_message.strip()
-
-            if normalized:
-                return normalized
-
-    reason = response.reason_phrase.strip()
-
-    if reason:
-        return reason
-
-    return "Unknown TMDB error."
-
-
-def _extract_retry_after_seconds(
-    response: httpx.Response,
-) -> int | None:
-    """Return an integer ``Retry-After`` delay when one is supplied.
-
-    HTTP also permits an HTTP-date here. Cineara deliberately ignores that form
-    at this low-level boundary and exposes only the simple integer delay.
-    """
-
-    raw_value = response.headers.get("Retry-After")
-
-    if raw_value is None:
-        return None
-
-    normalized = raw_value.strip()
-
-    if not normalized.isdigit():
-        return None
-
-    value = int(
-        normalized,
-    )
-
-    if value < 0:
-        return None
-
-    return value
-
-
-# =============================================================================
-# Public exports
-# =============================================================================
-
-
-__all__ = [
-    "DEFAULT_TMDB_BASE_URL",
-    "DEFAULT_TMDB_LANGUAGE",
-    "DEFAULT_TMDB_TIMEOUT_SECONDS",
-    "TmdbClient",
-    "TmdbClientError",
-    "TmdbHttpError",
-    "TmdbRequestError",
-    "TmdbResponseError",
-    "TmdbTimeoutError",
-]

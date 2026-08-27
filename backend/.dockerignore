@@ -1,30 +1,72 @@
-# Python environments and caches
-.venv/
+# =============================================================================
+# Python
+# =============================================================================
+
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
 
-# Local configuration and secrets
+# Local virtual environments are platform-specific and must never enter the
+# image build context.
+.venv/
+venv/
+env/
+
+
+# =============================================================================
+# Secrets and local configuration
+# =============================================================================
+
 .env
 .env.*
 !.env.example
 
-# Version-control and IDE files
+*.pem
+*.key
+*.crt
+
+
+# =============================================================================
+# Version-control / IDE metadata
+# =============================================================================
+
 .git/
-.github/
+.gitignore
+.gitattributes
+
 .idea/
 .vscode/
 
-# Build and package output
+
+# =============================================================================
+# Build / package output
+# =============================================================================
+
 build/
 dist/
 *.egg-info/
 
-# Files not required by the runtime image
-tests/
-alembic/
+
+# =============================================================================
+# Local logs and temporary files
+# =============================================================================
+
 *.log
+*.tmp
+tmp/
+temp/
+
+
+# =============================================================================
+# OS metadata
+# =============================================================================
+
+.DS_Store
+Thumbs.db

@@ -1,143 +1,84 @@
 """TMDB image URL construction utilities.
 
-TMDB media payloads do not normally return complete image URLs.
+This module converts raw TMDB image paths into complete HTTPS image URLs.
 
-Instead, fields such as:
+TMDB transport models intentionally keep artwork fields such as
+``poster_path``, ``backdrop_path``, ``profile_path``, ``logo_path``, and
+``still_path`` as raw provider paths. URL construction is centralized here so
+the rest of the integration layer does not duplicate image-host or size logic.
 
-    poster_path
-    backdrop_path
-    profile_path
-    logo_path
+This module owns:
 
-contain relative file paths such as:
+- TMDB image base-URL normalization;
+- image-size token validation;
+- raw image-path validation;
+- complete image URL construction;
+- resource-oriented convenience helpers.
 
-    /abcdef.jpg
+It does not own:
 
-A complete TMDB image URL is composed from:
+- HTTP requests;
+- TMDB configuration retrieval;
+- caching;
+- image preloading;
+- fallback artwork;
+- Cineara presentation logic;
+- media classification;
+- persistence;
+- user preferences.
 
-    base URL
-        +
-    image size
-        +
-    file path
-
-For example:
-
-    /abcdef.jpg
-
-can become:
-
-    https://image.tmdb.org/t/p/w500/abcdef.jpg
-
-Cineara's backend owns this transformation.
-
-Flutter must never need to know:
-
-- TMDB's image host;
-- TMDB image-size identifiers;
-- how paths are normalized;
-- how missing TMDB images are represented.
-
-The integration/mapping layer should therefore convert raw TMDB paths into
-complete URLs before returning Cineara API responses.
-
-Example
--------
-
-Raw TMDB search result:
-
-    poster_path = "/abcdef.jpg"
-
-Cineara mapping:
-
-    image_url = poster_url(result.poster_path)
-
-Flutter receives:
-
-    {
-        "image_url": "https://image.tmdb.org/t/p/w500/abcdef.jpg"
-    }
-
-instead of:
-
-    {
-        "poster_path": "/abcdef.jpg"
-    }
+The utilities are deterministic and perform no network operations.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Final
+from urllib.parse import urlsplit
 
 # =============================================================================
-# Default TMDB image configuration
-# =============================================================================
-#
-# TMDB exposes image configuration through its configuration endpoint.
-#
-# These defaults make Cineara's integration immediately usable while keeping
-# the builder configurable so the values can later be populated from TMDB
-# configuration if desired.
+# Defaults
 # =============================================================================
 
 
-DEFAULT_TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
+TMDB_IMAGE_BASE_URL: Final = "https://image.tmdb.org/t/p"
 
-DEFAULT_POSTER_SIZE = "w500"
-DEFAULT_PROFILE_SIZE = "w185"
-DEFAULT_BACKDROP_SIZE = "w1280"
+DEFAULT_POSTER_SIZE: Final = "w500"
+DEFAULT_PROFILE_SIZE: Final = "w185"
+DEFAULT_BACKDROP_SIZE: Final = "w1280"
+DEFAULT_LOGO_SIZE: Final = "w300"
+DEFAULT_STILL_SIZE: Final = "w300"
 
-ORIGINAL_IMAGE_SIZE = "original"
+ORIGINAL_IMAGE_SIZE: Final = "original"
 
 
 # =============================================================================
-# Image URL builder
+# Builder
 # =============================================================================
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class TmdbImageUrlBuilder:
-    """Build complete TMDB image URLs.
+    """Immutable builder for complete TMDB image URLs."""
 
-    Parameters
-    ----------
-    base_url:
-        Base TMDB image URL.
+    base_url: str = TMDB_IMAGE_BASE_URL
 
-    poster_size:
-        Default image size used for poster artwork.
+    def __post_init__(self) -> None:
+        """Normalize and validate the configured image base URL."""
 
-    profile_size:
-        Default image size used for person/profile artwork.
-
-    backdrop_size:
-        Default image size used for backdrop artwork.
-
-    Notes
-    -----
-    Raw TMDB paths remain completely separate from Cineara's public API.
-
-    For example:
-
-        builder.poster("/abc.jpg")
-
-    returns a complete URL while:
-
-        builder.poster(None)
-
-    returns ``None``.
-
-    The class is immutable and safe to reuse throughout the application.
-    """
-
-    base_url: str = DEFAULT_TMDB_IMAGE_BASE_URL
-
-    poster_size: str = DEFAULT_POSTER_SIZE
-    profile_size: str = DEFAULT_PROFILE_SIZE
-    backdrop_size: str = DEFAULT_BACKDROP_SIZE
+        object.__setattr__(
+            self,
+            "base_url",
+            _normalize_base_url(
+                self.base_url,
+            ),
+        )
 
     # =========================================================================
-    # Generic builder
+    # Generic construction
     # =========================================================================
 
     def build(
@@ -146,170 +87,100 @@ class TmdbImageUrlBuilder:
         *,
         size: str,
     ) -> str | None:
-        """Build a complete TMDB image URL.
+        """Build a complete TMDB image URL."""
 
-        Parameters
-        ----------
-        path:
-            Raw TMDB image path.
-
-            Examples:
-
-                "/abcdef.jpg"
-                "abcdef.jpg"
-
-            ``None`` and blank strings produce ``None``.
-
-        size:
-            TMDB image-size identifier.
-
-            Examples:
-
-                "w185"
-                "w500"
-                "w1280"
-                "original"
-
-        Returns
-        -------
-        str | None
-            Complete image URL, or ``None`` if no usable image path exists.
-
-        Raises
-        ------
-        ValueError
-            If the image size or configured base URL is invalid.
-        """
-
-        normalized_path = _normalize_image_path(path)
+        normalized_path = _normalize_image_path(
+            path,
+        )
 
         if normalized_path is None:
             return None
 
-        normalized_size = _normalize_image_size(size)
-
-        normalized_base_url = _normalize_base_url(
-            self.base_url,
+        normalized_size = _normalize_size(
+            size,
         )
 
-        return f"{normalized_base_url}/{normalized_size}/{normalized_path}"
+        return f"{self.base_url}/{normalized_size}{normalized_path}"
 
     # =========================================================================
-    # Poster
+    # Resource-oriented helpers
     # =========================================================================
 
     def poster(
         self,
         path: str | None,
+        *,
+        size: str = DEFAULT_POSTER_SIZE,
     ) -> str | None:
-        """Build a poster image URL.
-
-        Intended for:
-
-            movie.poster_path
-            tv.poster_path
-            season.poster_path
-            collection.poster_path
-
-        Example
-        -------
-
-            builder.poster("/abcdef.jpg")
-
-        returns:
-
-            https://image.tmdb.org/t/p/w500/abcdef.jpg
-        """
+        """Build a complete TMDB poster URL."""
 
         return self.build(
             path,
-            size=self.poster_size,
+            size=size,
         )
-
-    # =========================================================================
-    # Profile
-    # =========================================================================
 
     def profile(
         self,
         path: str | None,
+        *,
+        size: str = DEFAULT_PROFILE_SIZE,
     ) -> str | None:
-        """Build a person/profile image URL.
-
-        Intended for:
-
-            person.profile_path
-
-        Example
-        -------
-
-            builder.profile("/abcdef.jpg")
-
-        returns a complete profile-image URL.
-        """
+        """Build a complete TMDB profile-image URL."""
 
         return self.build(
             path,
-            size=self.profile_size,
+            size=size,
         )
-
-    # =========================================================================
-    # Backdrop
-    # =========================================================================
 
     def backdrop(
         self,
         path: str | None,
+        *,
+        size: str = DEFAULT_BACKDROP_SIZE,
     ) -> str | None:
-        """Build a backdrop image URL.
-
-        Intended for:
-
-            movie.backdrop_path
-            tv.backdrop_path
-            collection.backdrop_path
-
-        Example
-        -------
-
-            builder.backdrop("/abcdef.jpg")
-
-        returns a complete backdrop-image URL.
-        """
+        """Build a complete TMDB backdrop URL."""
 
         return self.build(
             path,
-            size=self.backdrop_size,
+            size=size,
         )
 
-    # =========================================================================
-    # Original
-    # =========================================================================
+    def logo(
+        self,
+        path: str | None,
+        *,
+        size: str = DEFAULT_LOGO_SIZE,
+    ) -> str | None:
+        """Build a complete TMDB logo URL."""
+
+        return self.build(
+            path,
+            size=size,
+        )
+
+    def still(
+        self,
+        path: str | None,
+        *,
+        size: str = DEFAULT_STILL_SIZE,
+    ) -> str | None:
+        """Build a complete TMDB episode-still URL."""
+
+        return self.build(
+            path,
+            size=size,
+        )
 
     def original(
         self,
         path: str | None,
     ) -> str | None:
-        """Build an original-resolution TMDB image URL.
-
-        This should be used selectively because original artwork can be much
-        larger than the resized variants.
-
-        It is useful later for:
-
-            image galleries;
-            fullscreen artwork;
-            original logos where required.
-        """
+        """Build a complete original-resolution TMDB image URL."""
 
         return self.build(
             path,
             size=ORIGINAL_IMAGE_SIZE,
         )
-
-    # =========================================================================
-    # Arbitrary size
-    # =========================================================================
 
     def sized(
         self,
@@ -317,11 +188,7 @@ class TmdbImageUrlBuilder:
         *,
         size: str,
     ) -> str | None:
-        """Build an image URL using an explicitly requested TMDB size.
-
-        This is useful when a future Cineara surface needs a different image
-        resolution without adding another specialized method.
-        """
+        """Build a complete TMDB image URL using an explicit size token."""
 
         return self.build(
             path,
@@ -330,16 +197,169 @@ class TmdbImageUrlBuilder:
 
 
 # =============================================================================
-# Shared default builder
-# =============================================================================
-#
-# Most Cineara mapping code does not need a custom builder.
-#
-# Keep one immutable module-level builder for those common cases.
+# Base-URL validation
 # =============================================================================
 
 
-_default_builder = TmdbImageUrlBuilder()
+def _normalize_base_url(
+    value: str,
+) -> str:
+    """Normalize and validate a TMDB image base URL."""
+
+    if not isinstance(
+        value,
+        str,
+    ):
+        raise TypeError("base_url must be a string.")
+
+    normalized = value.strip().rstrip("/")
+
+    if not normalized:
+        raise ValueError("base_url must not be blank.")
+
+    parsed = urlsplit(
+        normalized,
+    )
+
+    if parsed.scheme.lower() != "https":
+        raise ValueError("base_url must use HTTPS.")
+
+    if not parsed.netloc:
+        raise ValueError("base_url must contain a host.")
+
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("base_url must not contain credentials.")
+
+    if parsed.query:
+        raise ValueError("base_url must not contain a query string.")
+
+    if parsed.fragment:
+        raise ValueError("base_url must not contain a fragment.")
+
+    return normalized
+
+
+# =============================================================================
+# Image-path validation
+# =============================================================================
+
+
+def _normalize_image_path(
+    value: str | None,
+) -> str | None:
+    """Normalize and validate a raw TMDB image path."""
+
+    if value is None:
+        return None
+
+    if not isinstance(
+        value,
+        str,
+    ):
+        raise TypeError("image path must be a string or None.")
+
+    normalized = value.strip()
+
+    if not normalized:
+        return None
+
+    if "\\" in normalized:
+        raise ValueError("image path must not contain backslashes.")
+
+    parsed = urlsplit(
+        normalized,
+    )
+
+    if parsed.scheme or parsed.netloc:
+        raise ValueError(
+            "image path must be a raw TMDB path, not a complete URL."
+        )
+
+    if parsed.query:
+        raise ValueError("image path must not contain a query string.")
+
+    if parsed.fragment:
+        raise ValueError("image path must not contain a fragment.")
+
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+
+    path_segments = normalized.split("/")
+
+    if any(
+        segment
+        in {
+            ".",
+            "..",
+        }
+        for segment in path_segments
+    ):
+        raise ValueError(
+            "image path must not contain path traversal segments."
+        )
+
+    if normalized == "/":
+        return None
+
+    return normalized
+
+
+# =============================================================================
+# Image-size validation
+# =============================================================================
+
+
+def _normalize_size(
+    value: str,
+) -> str:
+    """Normalize and validate a TMDB image-size token."""
+
+    if not isinstance(
+        value,
+        str,
+    ):
+        raise TypeError("size must be a string.")
+
+    normalized = value.strip().lower()
+
+    if not normalized:
+        raise ValueError("size must not be blank.")
+
+    if normalized == ORIGINAL_IMAGE_SIZE:
+        return normalized
+
+    if normalized[0] not in {
+        "w",
+        "h",
+    }:
+        raise ValueError("size must be 'original' or begin with 'w' or 'h'.")
+
+    numeric_part = normalized[1:]
+
+    if (
+        not numeric_part
+        or not numeric_part.isascii()
+        or not numeric_part.isdigit()
+    ):
+        raise ValueError("size must contain a positive integer dimension.")
+
+    if (
+        int(
+            numeric_part,
+        )
+        <= 0
+    ):
+        raise ValueError("size dimension must be greater than 0.")
+
+    return normalized
+
+
+# =============================================================================
+# Default builder
+# =============================================================================
+
+
+_default_builder: Final = TmdbImageUrlBuilder()
 
 
 # =============================================================================
@@ -347,192 +367,89 @@ _default_builder = TmdbImageUrlBuilder()
 # =============================================================================
 
 
-def poster_url(
-    path: str | None,
-) -> str | None:
-    """Return a complete URL for a TMDB poster path.
-
-    Example
-    -------
-
-        poster_url("/abcdef.jpg")
-
-    returns:
-
-        https://image.tmdb.org/t/p/w500/abcdef.jpg
-    """
-
-    return _default_builder.poster(path)
-
-
-def profile_url(
-    path: str | None,
-) -> str | None:
-    """Return a complete URL for a TMDB person profile path."""
-
-    return _default_builder.profile(path)
-
-
-def backdrop_url(
-    path: str | None,
-) -> str | None:
-    """Return a complete URL for a TMDB backdrop path."""
-
-    return _default_builder.backdrop(path)
-
-
-def original_image_url(
-    path: str | None,
-) -> str | None:
-    """Return a complete URL for original-resolution TMDB artwork."""
-
-    return _default_builder.original(path)
-
-
 def image_url(
     path: str | None,
     *,
     size: str,
 ) -> str | None:
-    """Return a complete TMDB image URL for an explicit size.
+    """Build a TMDB image URL using the default image builder."""
 
-    Prefer the semantic helpers:
-
-        poster_url()
-        profile_url()
-        backdrop_url()
-
-    whenever possible.
-
-    Use this generic helper for less common artwork sizes.
-    """
-
-    return _default_builder.sized(
+    return _default_builder.build(
         path,
         size=size,
     )
 
 
-# =============================================================================
-# Normalization helpers
-# =============================================================================
+def poster_url(
+    path: str | None,
+    *,
+    size: str = DEFAULT_POSTER_SIZE,
+) -> str | None:
+    """Build a TMDB poster URL using the default image builder."""
+
+    return _default_builder.poster(
+        path,
+        size=size,
+    )
 
 
-def _normalize_image_path(
+def profile_url(
+    path: str | None,
+    *,
+    size: str = DEFAULT_PROFILE_SIZE,
+) -> str | None:
+    """Build a TMDB profile-image URL using the default image builder."""
+
+    return _default_builder.profile(
+        path,
+        size=size,
+    )
+
+
+def backdrop_url(
+    path: str | None,
+    *,
+    size: str = DEFAULT_BACKDROP_SIZE,
+) -> str | None:
+    """Build a TMDB backdrop URL using the default image builder."""
+
+    return _default_builder.backdrop(
+        path,
+        size=size,
+    )
+
+
+def logo_url(
+    path: str | None,
+    *,
+    size: str = DEFAULT_LOGO_SIZE,
+) -> str | None:
+    """Build a TMDB logo URL using the default image builder."""
+
+    return _default_builder.logo(
+        path,
+        size=size,
+    )
+
+
+def still_url(
+    path: str | None,
+    *,
+    size: str = DEFAULT_STILL_SIZE,
+) -> str | None:
+    """Build a TMDB episode-still URL using the default image builder."""
+
+    return _default_builder.still(
+        path,
+        size=size,
+    )
+
+
+def original_image_url(
     path: str | None,
 ) -> str | None:
-    """Normalize a raw TMDB image path.
+    """Build an original-resolution TMDB image URL."""
 
-    TMDB generally returns paths beginning with ``/``:
-
-        /abcdef.jpg
-
-    The leading slash is removed because the builder inserts separators
-    itself.
-
-    Missing and blank values return ``None``.
-
-    Complete external URLs are deliberately rejected rather than propagated.
-    This function exists specifically for TMDB image paths and should not
-    become a generic arbitrary-image proxy.
-    """
-
-    if path is None:
-        return None
-
-    if not isinstance(path, str):
-        return None
-
-    normalized = path.strip()
-
-    if not normalized:
-        return None
-
-    # -------------------------------------------------------------------------
-    # This utility should only receive raw TMDB paths.
-    #
-    # Do not silently propagate arbitrary external URLs.
-    # -------------------------------------------------------------------------
-
-    lowered = normalized.lower()
-
-    if lowered.startswith(
-        (
-            "http://",
-            "https://",
-            "//",
-        )
-    ):
-        return None
-
-    # Remove any number of accidental leading slashes.
-    normalized = normalized.lstrip("/")
-
-    if not normalized:
-        return None
-
-    return normalized
-
-
-def _normalize_image_size(
-    size: str,
-) -> str:
-    """Normalize and validate a TMDB image-size identifier."""
-
-    if not isinstance(size, str):
-        raise ValueError("TMDB image size must be a non-empty string.")
-
-    normalized = size.strip().strip("/")
-
-    if not normalized:
-        raise ValueError("TMDB image size must be a non-empty string.")
-
-    # Prevent malformed values from changing the URL path structure.
-    if "/" in normalized:
-        raise ValueError("TMDB image size must not contain '/'.")
-
-    if "://" in normalized:
-        raise ValueError(
-            "TMDB image size must be a size identifier, not a URL."
-        )
-
-    return normalized
-
-
-def _normalize_base_url(
-    base_url: str,
-) -> str:
-    """Normalize and validate the configured TMDB image base URL."""
-
-    if not isinstance(base_url, str):
-        raise ValueError("TMDB image base URL must be a non-empty HTTPS URL.")
-
-    normalized = base_url.strip().rstrip("/")
-
-    if not normalized:
-        raise ValueError("TMDB image base URL must be a non-empty HTTPS URL.")
-
-    if not normalized.lower().startswith("https://"):
-        raise ValueError("TMDB image base URL must use HTTPS.")
-
-    return normalized
-
-
-# =============================================================================
-# Public exports
-# =============================================================================
-
-
-__all__ = [
-    "DEFAULT_BACKDROP_SIZE",
-    "DEFAULT_POSTER_SIZE",
-    "DEFAULT_PROFILE_SIZE",
-    "DEFAULT_TMDB_IMAGE_BASE_URL",
-    "ORIGINAL_IMAGE_SIZE",
-    "TmdbImageUrlBuilder",
-    "backdrop_url",
-    "image_url",
-    "original_image_url",
-    "poster_url",
-    "profile_url",
-]
+    return _default_builder.original(
+        path,
+    )

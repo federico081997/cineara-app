@@ -2,97 +2,39 @@ name: cineara
 
 services:
   # ===========================================================================
-  # Cineara FastAPI backend
-  # ===========================================================================
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-
-    container_name: cineara-backend
-
-    env_file:
-      - ./backend/.env
-
-    # -------------------------------------------------------------------------
-    # Override hostnames from the local-development .env.
-    #
-    # Inside Docker:
-    #
-    #   localhost
-    #
-    # refers to the backend container itself.
-    #
-    # Docker Compose service names act as DNS names:
-    #
-    #   postgres
-    #   redis
-    # -------------------------------------------------------------------------
-
-    environment:
-      CINEARA_POSTGRES_HOST: postgres
-      CINEARA_POSTGRES_PORT: "5432"
-
-      CINEARA_REDIS_HOST: redis
-      CINEARA_REDIS_PORT: "6379"
-
-      CINEARA_API_HOST: 0.0.0.0
-      CINEARA_API_PORT: "8000"
-
-    ports:
-      - "8000:8000"
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-      redis:
-        condition: service_healthy
-
-    restart: unless-stopped
-
-    init: true
-
-    networks:
-      - cineara-network
-
-
-  # ===========================================================================
   # PostgreSQL
   # ===========================================================================
 
   postgres:
-    image: postgres:17-alpine
-
-    container_name: cineara-postgres
+    image: postgres:${CINEARA_POSTGRES_IMAGE_TAG:-17-alpine}
+    restart: unless-stopped
 
     environment:
-      POSTGRES_DB: cineara
-      POSTGRES_USER: cineara
-      POSTGRES_PASSWORD: cineara_dev_password
+      POSTGRES_DB: ${CINEARA_POSTGRES_DATABASE:-cineara}
+      POSTGRES_USER: ${CINEARA_POSTGRES_USER:-cineara}
+      POSTGRES_PASSWORD: ${CINEARA_POSTGRES_PASSWORD:-cineara_dev_password}
 
     ports:
-      - "5432:5432"
+      - "${CINEARA_POSTGRES_BIND_ADDRESS:-127.0.0.1}:${CINEARA_POSTGRES_PORT:-5432}:5432"
 
     volumes:
-      - cineara-postgres-data:/var/lib/postgresql/data
+      - cineara_postgres_data:/var/lib/postgresql/data
 
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U cineara -d cineara"
+          "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"",
         ]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
       start_period: 5s
 
-    restart: unless-stopped
+    stop_grace_period: 30s
 
     networks:
-      - cineara-network
+      - cineara_backend
 
 
   # ===========================================================================
@@ -100,58 +42,136 @@ services:
   # ===========================================================================
 
   redis:
-    image: redis:8-alpine
+    image: redis:${CINEARA_REDIS_IMAGE_TAG:-8-alpine}
+    restart: unless-stopped
 
-    container_name: cineara-redis
+    environment:
+      CINEARA_REDIS_PASSWORD: ${CINEARA_REDIS_PASSWORD:-}
 
     command:
-      [
-        "redis-server",
-        "--appendonly",
-        "yes"
-      ]
+      - /bin/sh
+      - -c
+      - |
+        if [ -n "$${CINEARA_REDIS_PASSWORD}" ]; then
+          exec redis-server \
+            --appendonly yes \
+            --appendfsync everysec \
+            --requirepass "$${CINEARA_REDIS_PASSWORD}"
+        else
+          exec redis-server \
+            --appendonly yes \
+            --appendfsync everysec
+        fi
 
     ports:
-      - "6379:6379"
+      - "${CINEARA_REDIS_BIND_ADDRESS:-127.0.0.1}:${CINEARA_REDIS_PORT:-6379}:6379"
 
     volumes:
-      - cineara-redis-data:/data
+      - cineara_redis_data:/data
 
     healthcheck:
       test:
-        [
-          "CMD",
-          "redis-cli",
-          "ping"
-        ]
+        - CMD-SHELL
+        - >-
+          if [ -n "$$CINEARA_REDIS_PASSWORD" ]; then
+            redis-cli -a "$$CINEARA_REDIS_PASSWORD" ping 2>/dev/null | grep -q PONG;
+          else
+            redis-cli ping | grep -q PONG;
+          fi
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
       start_period: 3s
 
-    restart: unless-stopped
+    stop_grace_period: 15s
 
     networks:
-      - cineara-network
+      - cineara_backend
+
+
+  # ===========================================================================
+  # Cineara API
+  # ===========================================================================
+  #
+  # The backend service is placed behind the "app" profile so normal local
+  # development can run PostgreSQL/Redis in Docker while Uvicorn runs directly
+  # on the host with hot reload:
+  #
+  #   docker compose up -d postgres redis
+  #
+  # To run the complete stack in containers:
+  #
+  #   docker compose --profile app up -d --build
+  # ===========================================================================
+
+  backend:
+    profiles:
+      - app
+
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    image: cineara-backend:${CINEARA_BACKEND_IMAGE_TAG:-local}
+    restart: unless-stopped
+    init: true
+
+    env_file:
+      - ./backend/.env
+
+    environment:
+      # Service-to-service addresses must use Compose DNS names rather than
+      # localhost when FastAPI itself runs in Docker.
+      CINEARA_API_HOST: 0.0.0.0
+      CINEARA_API_PORT: 8000
+
+      CINEARA_POSTGRES_HOST: postgres
+      CINEARA_POSTGRES_PORT: 5432
+
+      CINEARA_REDIS_HOST: redis
+      CINEARA_REDIS_PORT: 6379
+
+    ports:
+      - "${CINEARA_API_BIND_ADDRESS:-127.0.0.1}:${CINEARA_API_PUBLISHED_PORT:-8000}:8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    read_only: true
+
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    stop_grace_period: 30s
+
+    networks:
+      - cineara_backend
 
 
 # =============================================================================
-# Persistent data
+# Volumes
 # =============================================================================
+
 
 volumes:
-  cineara-postgres-data:
-    name: cineara-postgres-data
-
-  cineara-redis-data:
-    name: cineara-redis-data
+  cineara_postgres_data:
+  cineara_redis_data:
 
 
 # =============================================================================
-# Internal network
+# Networks
 # =============================================================================
+
 
 networks:
-  cineara-network:
-    name: cineara-network
+  cineara_backend:
     driver: bridge

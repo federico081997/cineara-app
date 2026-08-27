@@ -1,46 +1,84 @@
-"""Application settings and environment config for the Cineara backend."""
+"""Validated runtime configuration for the Cineara backend.
+
+Settings are loaded from ``CINEARA_*`` environment variables and an optional
+local ``.env`` file.
+
+This module owns configuration values and lightweight configuration-derived
+helpers only. Application resources such as HTTP clients and Redis connections
+are constructed by the FastAPI lifespan in ``app.main``.
+
+Environment-variable examples
+-----------------------------
+``CINEARA_ENVIRONMENT``
+    development, staging, production, or test.
+
+``CINEARA_TMDB_READ_ACCESS_TOKEN``
+    TMDB API read-access bearer token.
+
+``CINEARA_REDIS_HOST``
+    Redis hostname.
+
+``CINEARA_SEARCH_MIN_QUERY_LENGTH``
+    Minimum normalized Search query length.
+
+The legacy shorthand ``CINEARA_ENV`` is also accepted for the environment
+field.
+"""
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import quote
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+)
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+)
+
+# =============================================================================
+# Configuration types
+# =============================================================================
+
+
+type EnvironmentName = Literal[
+    "development",
+    "staging",
+    "production",
+    "test",
+]
+
+type LogLevel = Literal[
+    "CRITICAL",
+    "ERROR",
+    "WARNING",
+    "INFO",
+    "DEBUG",
+]
+
+type TrendingTimeWindow = Literal[
+    "day",
+    "week",
+]
+
+
+# =============================================================================
+# Settings
+# =============================================================================
 
 
 class Settings(BaseSettings):
-    """Validated runtime configuration loaded from ``CINEARA_*`` variables.
-
-    Environment variables use the ``CINEARA_`` prefix.
-
-    Examples
-    --------
-
-    TMDB:
-
-        CINEARA_TMDB_ACCESS_TOKEN=...
-        CINEARA_TMDB_BASE_URL=https://api.themoviedb.org/3
-        CINEARA_TMDB_LANGUAGE=en-US
-        CINEARA_TMDB_REQUEST_TIMEOUT_SECONDS=10
-
-    Search:
-
-        CINEARA_SEARCH_MIN_QUERY_LENGTH=2
-        CINEARA_SEARCH_CACHE_TTL_SECONDS=300
-        CINEARA_MOVIE_METADATA_CACHE_TTL_SECONDS=86400
-        CINEARA_TMDB_ENRICHMENT_CONCURRENCY=4
-
-    PostgreSQL:
-
-        CINEARA_POSTGRES_HOST=localhost
-        CINEARA_POSTGRES_PORT=5432
-
-    Redis:
-
-        CINEARA_REDIS_HOST=localhost
-        CINEARA_REDIS_PORT=6379
-    """
+    """Validated Cineara backend runtime settings."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -54,20 +92,17 @@ class Settings(BaseSettings):
     # Application
     # =========================================================================
 
-    environment: Literal[
-        "development",
-        "staging",
-        "production",
-        "test",
-    ] = "development"
+    environment: EnvironmentName = Field(
+        default="development",
+        validation_alias=AliasChoices(
+            "CINEARA_ENVIRONMENT",
+            "CINEARA_ENV",
+        ),
+    )
 
     debug: bool = False
 
-    log_level: str = "INFO"
-
-    # =========================================================================
-    # API
-    # =========================================================================
+    log_level: LogLevel = "INFO"
 
     api_host: str = "0.0.0.0"
 
@@ -75,80 +110,6 @@ class Settings(BaseSettings):
         default=8000,
         ge=1,
         le=65535,
-    )
-
-    # =========================================================================
-    # TMDB
-    # =========================================================================
-    #
-    # ``tmdb_access_token`` is the canonical Cineara setting.
-    #
-    # The legacy name:
-    #
-    #     CINEARA_TMDB_READ_ACCESS_TOKEN
-    #
-    # remains accepted temporarily so an existing development .env file does
-    # not need to be changed immediately.
-    # =========================================================================
-
-    tmdb_access_token: SecretStr
-
-    tmdb_base_url: str = "https://api.themoviedb.org/3"
-
-    tmdb_language: str = "en-US"
-
-    tmdb_request_timeout_seconds: float = Field(
-        default=10.0,
-        gt=0.0,
-        le=60.0,
-    )
-
-    # =========================================================================
-    # Search
-    # =========================================================================
-    #
-    # These values belong in configuration rather than being hard-coded inside
-    # modules/search.py.
-    #
-    # Search will use:
-    #
-    #     search_min_query_length
-    #
-    # before requesting TMDB.
-    #
-    # Search-result pages use:
-    #
-    #     search_cache_ttl_seconds
-    #
-    # while enriched movie metadata uses the substantially longer:
-    #
-    #     movie_metadata_cache_ttl_seconds
-    #
-    # because production-country metadata changes extremely rarely.
-    # =========================================================================
-
-    search_min_query_length: int = Field(
-        default=2,
-        ge=1,
-        le=20,
-    )
-
-    search_cache_ttl_seconds: int = Field(
-        default=300,
-        ge=1,
-        le=86_400,
-    )
-
-    movie_metadata_cache_ttl_seconds: int = Field(
-        default=86_400,
-        ge=60,
-        le=2_592_000,
-    )
-
-    tmdb_enrichment_concurrency: int = Field(
-        default=4,
-        ge=1,
-        le=20,
     )
 
     # =========================================================================
@@ -181,53 +142,326 @@ class Settings(BaseSettings):
         le=65535,
     )
 
+    redis_database: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    redis_username: str | None = None
+
+    redis_password: SecretStr | None = None
+
+    redis_ssl: bool = False
+
+    redis_decode_responses: bool = True
+
+    redis_socket_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        le=60,
+    )
+
+    redis_socket_connect_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        le=60,
+    )
+
+    redis_health_check_interval_seconds: int = Field(
+        default=30,
+        ge=0,
+    )
+
+    redis_max_connections: int = Field(
+        default=20,
+        ge=1,
+    )
+
+    redis_key_prefix: str | None = None
+
     # =========================================================================
-    # Infrastructure / dependency health checks
+    # Infrastructure readiness
     # =========================================================================
 
     dependency_timeout_seconds: float = Field(
         default=1.0,
-        gt=0.0,
-        le=30.0,
+        gt=0,
+        le=30,
     )
 
     # =========================================================================
-    # Content policy
+    # TMDB
     # =========================================================================
 
-    include_adult_content: bool = False
+    tmdb_read_access_token: SecretStr
 
-    include_mature_content: bool = True
+    tmdb_base_url: str = "https://api.themoviedb.org/3"
+
+    tmdb_language: str = "en-US"
+
+    tmdb_request_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        le=60,
+    )
+
+    tmdb_max_connections: int = Field(
+        default=20,
+        ge=1,
+    )
+
+    tmdb_max_keepalive_connections: int = Field(
+        default=10,
+        ge=0,
+    )
+
+    tmdb_include_adult: bool = False
 
     # =========================================================================
-    # Backwards-compatible properties
+    # Search
+    # =========================================================================
+
+    search_min_query_length: int = Field(
+        default=2,
+        ge=1,
+        le=200,
+    )
+
+    search_cache_ttl_seconds: int = Field(
+        default=300,
+        ge=1,
+    )
+
+    search_overview_cache_ttl_seconds: int = Field(
+        default=180,
+        ge=1,
+    )
+
+    search_landing_cache_ttl_seconds: int = Field(
+        default=600,
+        ge=1,
+    )
+
+    search_overview_section_limit: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+    )
+
+    search_trending_limit: int = Field(
+        default=12,
+        ge=1,
+        le=100,
+    )
+
+    search_trending_time_window: TrendingTimeWindow = "week"
+
+    # =========================================================================
+    # String validation
+    # =========================================================================
+
+    @field_validator(
+        "api_host",
+        "postgres_host",
+        "postgres_database",
+        "postgres_user",
+        "redis_host",
+        "tmdb_base_url",
+        "tmdb_language",
+    )
+    @classmethod
+    def _validate_required_text(
+        cls,
+        value: str,
+    ) -> str:
+        """Trim required string settings and reject blank values."""
+
+        normalized = value.strip()
+
+        if not normalized:
+            raise ValueError("Configuration value must not be blank.")
+
+        return normalized
+
+    @field_validator(
+        "redis_username",
+        "redis_key_prefix",
+    )
+    @classmethod
+    def _normalize_optional_text(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        """Trim optional text and collapse blank values to ``None``."""
+
+        if value is None:
+            return None
+
+        normalized = value.strip()
+
+        return normalized or None
+
+    @field_validator(
+        "tmdb_read_access_token",
+    )
+    @classmethod
+    def _validate_tmdb_access_token(
+        cls,
+        value: SecretStr,
+    ) -> SecretStr:
+        """Reject an empty TMDB bearer token."""
+
+        if not value.get_secret_value().strip():
+            raise ValueError("TMDB read-access token must not be blank.")
+
+        return value
+
+    # =========================================================================
+    # Derived Redis configuration
     # =========================================================================
 
     @property
-    def tmdb_read_access_token(self) -> SecretStr:
-        """Return the TMDB access token using the previous field name.
+    def redis_url(self) -> str:
+        """Return a Redis URL derived from validated Redis settings."""
 
-        This compatibility property can be removed once all existing Cineara
-        code has migrated from:
+        scheme = "rediss" if self.redis_ssl else "redis"
 
-            settings.tmdb_read_access_token
+        credentials = _redis_credentials(
+            username=self.redis_username,
+            password=self.redis_password,
+        )
 
-        to:
+        return (
+            f"{scheme}://{credentials}"
+            f"{self.redis_host}:{self.redis_port}/"
+            f"{self.redis_database}"
+        )
 
-            settings.tmdb_access_token
-        """
+    @property
+    def effective_redis_key_prefix(self) -> str:
+        """Return the environment-scoped Redis namespace."""
 
-        return self.tmdb_access_token
+        if self.redis_key_prefix is not None:
+            return self.redis_key_prefix.strip(":")
+
+        return f"cineara:{self.environment}"
 
 
-@lru_cache(maxsize=1)
+# =============================================================================
+# Readiness model
+# =============================================================================
+
+
+class DependencyStatus(BaseModel):
+    """Readiness state for Cineara's required infrastructure."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+
+    postgres: bool
+
+    redis: bool
+
+    @property
+    def ready(self) -> bool:
+        """Return whether every required dependency is reachable."""
+
+        return self.postgres and self.redis
+
+
+# =============================================================================
+# PostgreSQL readiness
+# =============================================================================
+
+
+async def check_postgres_ready(
+    settings: Settings,
+) -> bool:
+    """Check whether the configured PostgreSQL TCP endpoint is reachable.
+
+    This is intentionally a connectivity check rather than a database query.
+    Database migrations and schema-level health belong to the database layer.
+    """
+
+    if not isinstance(
+        settings,
+        Settings,
+    ):
+        raise TypeError("settings must be a Settings instance.")
+
+    writer: asyncio.StreamWriter | None = None
+
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(
+                settings.postgres_host,
+                settings.postgres_port,
+            ),
+            timeout=settings.dependency_timeout_seconds,
+        )
+
+    except (
+        OSError,
+        TimeoutError,
+    ):
+        return False
+
+    finally:
+        if writer is not None:
+            writer.close()
+
+            with suppress(
+                ConnectionError,
+                OSError,
+            ):
+                await writer.wait_closed()
+
+    return True
+
+
+# =============================================================================
+# Settings access
+# =============================================================================
+
+
+@lru_cache(
+    maxsize=1,
+)
 def get_settings() -> Settings:
-    """Return one cached settings instance for the current process."""
+    """Return the process-wide validated Settings instance."""
 
     return Settings()
 
 
-__all__ = [
-    "Settings",
-    "get_settings",
-]
+# =============================================================================
+# Redis URL helpers
+# =============================================================================
+
+
+def _redis_credentials(
+    *,
+    username: str | None,
+    password: SecretStr | None,
+) -> str:
+    """Build the optional URL-encoded Redis authentication component."""
+
+    raw_password = (
+        password.get_secret_value() if password is not None else None
+    )
+
+    if username is None and raw_password is None:
+        return ""
+
+    encoded_username = quote(
+        username or "",
+        safe="",
+    )
+
+    encoded_password = quote(
+        raw_password or "",
+        safe="",
+    )
+
+    return f"{encoded_username}:{encoded_password}@"

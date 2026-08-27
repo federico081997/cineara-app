@@ -1,65 +1,74 @@
 """Cineara FastAPI application entry point.
 
-This module owns application-lifetime infrastructure.
+The application lifespan owns long-lived infrastructure resources:
 
-Long-lived resources are created once when FastAPI starts and reused across
-requests:
+- one shared ``httpx.AsyncClient`` used by the TMDB integration;
+- one application-scoped ``TmdbClient``;
+- one Redis-backed cache adapter;
+- one application-scoped ``SearchService``.
 
-    shared HTTPX AsyncClient
-        ↓
-    TmdbClient
+Request dependencies read these objects from ``app.state``. No request creates
+its own HTTP connection pool or Redis connection pool.
 
-    shared Redis client / connection pool
-        ↓
-    Cache
-
-Feature modules retrieve the shared application-scoped objects through:
-
-    request.app.state.tmdb_client
-    request.app.state.cache
-
-The lower-level clients are also retained on ``app.state`` for infrastructure
-that may legitimately reuse them:
-
-    request.app.state.http_client
-    request.app.state.redis
-
-This prevents Cineara from creating new HTTP or Redis connection pools for
-individual Search requests.
-
-Search architecture
--------------------
-
-Search now performs automatic cache-first selective enrichment internally:
-
-    GET /api/v1/search
-        ↓
-    TMDB Search
-        ↓
-    classify Search metadata
-        ↓
-    Redis facts/details cache
-        ↓
-    selectively fetch /movie/{id} or /tv/{id} only when needed
-        ↓
-    final Cineara Search response
-
-There is no longer a public ``POST /api/v1/search/enrich`` route.
+The versioned feature API is assembled by ``app.api.router``.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import asyncio
+import logging
+from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI
-from redis.asyncio import Redis
+from fastapi import FastAPI, Response, status
+from pydantic import BaseModel, ConfigDict
 
 from app.api.router import api_router
-from app.core.config import get_settings
-from app.integrations.redis.cache import Cache
-from app.integrations.tmdb.client import TmdbClient
+from app.core.cache import (
+    CacheError,
+    RedisCache,
+)
+from app.core.config import (
+    DependencyStatus,
+    Settings,
+    check_postgres_ready,
+    get_settings,
+)
+from app.integrations.tmdb import TmdbClient
+from app.modules.search.mapper import SearchMapper
+from app.modules.search.service import SearchService
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Health response models
+# =============================================================================
+
+
+class HealthResponse(BaseModel):
+    """Unconditional process-liveness response."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+
+    status: str = "ok"
+
+
+class ReadinessResponse(BaseModel):
+    """Infrastructure-readiness response."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+
+    status: str
+    dependencies: DependencyStatus
+
 
 # =============================================================================
 # Application lifespan
@@ -68,212 +77,321 @@ from app.integrations.tmdb.client import TmdbClient
 
 @asynccontextmanager
 async def lifespan(
-    app: FastAPI,
+    fastapi_app: FastAPI,
 ) -> AsyncIterator[None]:
-    """Create and clean up application-scoped infrastructure.
-
-    Resources created here live for the complete FastAPI application lifetime.
-
-    Startup
-    -------
-
-        Settings
-            ↓
-        shared HTTPX AsyncClient
-            ↓
-        TmdbClient
-
-        shared Redis client
-            ↓
-        Cache
-
-    Shutdown
-    --------
-
-        TmdbClient marked closed
-            ↓
-        shared HTTPX connection pool closed
-            ↓
-        shared Redis connection pool closed
-
-    Redis availability
-    ------------------
-    Redis is intentionally not ``PING``ed here.
-
-    Search treats caching as an optimization. Cache read/write failures are
-    handled at the feature layer and should not prevent Cineara from using TMDB
-    directly.
-
-    Infrastructure/readiness endpoints may perform their own Redis health
-    checks without turning application startup into a hard Redis dependency.
-    """
+    """Create, expose, and close application-scoped resources."""
 
     settings = get_settings()
 
-    # =========================================================================
-    # Shared HTTPX client
-    # =========================================================================
-    #
-    # One AsyncClient owns one reusable connection pool for the application
-    # lifetime.
-    #
-    # It is injected into TmdbClient. Because the HTTP client is externally
-    # managed, TmdbClient will not close it itself.
-    # =========================================================================
-
-    http_client = httpx.AsyncClient()
-
-    # =========================================================================
-    # Shared Redis client
-    # =========================================================================
-    #
-    # redis.asyncio.Redis owns/reuses its internal connection pool.
-    #
-    # ``decode_responses=True`` makes Redis string values arrive as Python
-    # strings. Cineara's Cache abstraction also supports bytes defensively.
-    # =========================================================================
-
-    redis_client = Redis(
-        host=settings.redis_host,
-        port=settings.redis_port,
-        decode_responses=True,
+    logging.getLogger().setLevel(
+        settings.log_level,
     )
 
-    # Keep references nullable until construction succeeds so shutdown remains
-    # safe if application initialization raises midway through startup.
-    tmdb_client: TmdbClient | None = None
+    cleanup_http_client: httpx.AsyncClient | None = None
+    cleanup_tmdb_client: TmdbClient | None = None
+    cleanup_cache: RedisCache | None = None
 
     try:
-        # =====================================================================
-        # TMDB integration
-        # =====================================================================
+        http_client = _create_http_client(
+            settings,
+        )
+        cleanup_http_client = http_client
 
-        tmdb_client = TmdbClient(
-            access_token=settings.tmdb_access_token,
-            base_url=settings.tmdb_base_url,
-            language=settings.tmdb_language,
-            timeout_seconds=settings.tmdb_request_timeout_seconds,
+        tmdb_client = _create_tmdb_client(
+            settings=settings,
             http_client=http_client,
         )
+        cleanup_tmdb_client = tmdb_client
 
-        # =====================================================================
-        # Generic Redis-backed cache
-        # =====================================================================
-        #
-        # Cache deliberately remains independent from TMDB/Search/domain
-        # models. Feature layers own cache-key design and TTL policy.
-        # =====================================================================
+        cache = _create_cache(
+            settings,
+        )
+        cleanup_cache = cache
 
-        cache = Cache(
-            redis_client,
+        search_service = _create_search_service(
+            settings=settings,
+            tmdb_client=tmdb_client,
+            cache=cache,
         )
 
-        # =====================================================================
-        # Application state
-        # =====================================================================
-        #
-        # Search and other feature dependencies use:
-        #
-        #     request.app.state.tmdb_client
-        #     request.app.state.cache
-        #
-        # Lower-level clients are retained for infrastructure components that
-        # legitimately require them.
-        # =====================================================================
-
-        app.state.http_client = http_client
-        app.state.redis = redis_client
-
-        app.state.tmdb_client = tmdb_client
-        app.state.cache = cache
-
-        # =====================================================================
-        # Application runs here
-        # =====================================================================
+        fastapi_app.state.settings = settings
+        fastapi_app.state.tmdb_http_client = http_client
+        fastapi_app.state.tmdb_client = tmdb_client
+        fastapi_app.state.cache = cache
+        fastapi_app.state.search_service = search_service
 
         yield
 
     finally:
-        # =====================================================================
-        # Shutdown
-        # =====================================================================
-        #
-        # TmdbClient received an externally managed HTTPX client. Closing the
-        # integration client therefore marks TmdbClient closed while leaving
-        # the actual HTTPX pool for this lifespan owner to close.
-        #
-        # Each resource is closed by the layer that created/owns it.
-        # =====================================================================
-
-        if tmdb_client is not None:
-            await tmdb_client.aclose()
-
-        await http_client.aclose()
-        await redis_client.aclose()
+        await _shutdown_resources(
+            tmdb_client=cleanup_tmdb_client,
+            http_client=cleanup_http_client,
+            cache=cleanup_cache,
+        )
 
 
 # =============================================================================
-# Application factory
+# Resource construction
 # =============================================================================
 
 
-def create_app() -> FastAPI:
-    """Create and configure the Cineara FastAPI application."""
+def _create_http_client(
+    settings: Settings,
+) -> httpx.AsyncClient:
+    """Create the shared asynchronous HTTP client."""
 
-    settings = get_settings()
-
-    application = FastAPI(
-        title="Cineara API",
-        description=(
-            "Backend API for the Cineara movie, TV and anime "
-            "tracking application."
+    return httpx.AsyncClient(
+        limits=httpx.Limits(
+            max_connections=settings.tmdb_max_connections,
+            max_keepalive_connections=(
+                settings.tmdb_max_keepalive_connections
+            ),
         ),
-        version="0.1.0",
-        debug=settings.debug,
-        lifespan=lifespan,
     )
 
-    # =========================================================================
-    # API
-    # =========================================================================
-    #
-    # ``api_router`` owns the application's versioned API prefix:
-    #
-    #     /api/v1
-    #
-    # Search owns:
-    #
-    #     /search
-    #
-    # Therefore the Search route is:
-    #
-    #     GET /api/v1/search
-    #
-    # Search enrichment is now automatic and internal; there is deliberately
-    # no public ``POST /api/v1/search/enrich`` endpoint.
-    # =========================================================================
 
-    application.include_router(
-        api_router,
+def _create_tmdb_client(
+    *,
+    settings: Settings,
+    http_client: httpx.AsyncClient,
+) -> TmdbClient:
+    """Create the application-scoped TMDB integration client."""
+
+    return TmdbClient(
+        access_token=settings.tmdb_read_access_token,
+        base_url=settings.tmdb_base_url,
+        language=settings.tmdb_language,
+        timeout_seconds=settings.tmdb_request_timeout_seconds,
+        http_client=http_client,
     )
 
-    return application
+
+def _create_cache(
+    settings: Settings,
+) -> RedisCache:
+    """Create the application-scoped Redis cache adapter."""
+
+    return RedisCache.from_url(
+        settings.redis_url,
+        key_prefix=settings.effective_redis_key_prefix,
+        decode_responses=settings.redis_decode_responses,
+        socket_timeout_seconds=settings.redis_socket_timeout_seconds,
+        socket_connect_timeout_seconds=(
+            settings.redis_socket_connect_timeout_seconds
+        ),
+        health_check_interval_seconds=(
+            settings.redis_health_check_interval_seconds
+        ),
+        max_connections=settings.redis_max_connections,
+    )
+
+
+def _create_search_service(
+    *,
+    settings: Settings,
+    tmdb_client: TmdbClient,
+    cache: RedisCache,
+) -> SearchService:
+    """Create the application-scoped Search service."""
+
+    return SearchService(
+        tmdb=tmdb_client,
+        cache=cache,
+        mapper=SearchMapper(),
+        include_adult=settings.tmdb_include_adult,
+        min_query_length=settings.search_min_query_length,
+        search_cache_ttl_seconds=settings.search_cache_ttl_seconds,
+        overview_cache_ttl_seconds=(
+            settings.search_overview_cache_ttl_seconds
+        ),
+        landing_cache_ttl_seconds=settings.search_landing_cache_ttl_seconds,
+        overview_section_limit=settings.search_overview_section_limit,
+        trending_limit=settings.search_trending_limit,
+        trending_time_window=settings.search_trending_time_window,
+    )
 
 
 # =============================================================================
-# ASGI application
+# Application
 # =============================================================================
 
 
-app = create_app()
+app = FastAPI(
+    title="Cineara API",
+    version="0.1.0",
+    description="Backend API for Cineara.",
+    lifespan=lifespan,
+)
+
+app.include_router(
+    api_router,
+)
+
 
 # =============================================================================
-# Public exports
+# Liveness
 # =============================================================================
 
 
-__all__ = [
-    "app",
-    "create_app",
-    "lifespan",
-]
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    tags=[
+        "Infrastructure",
+    ],
+    summary="Check API liveness",
+)
+async def health() -> HealthResponse:
+    """Return success while the FastAPI process is serving requests."""
+
+    return HealthResponse()
+
+
+# =============================================================================
+# Readiness
+# =============================================================================
+
+
+@app.get(
+    "/ready",
+    response_model=ReadinessResponse,
+    tags=[
+        "Infrastructure",
+    ],
+    summary="Check required infrastructure",
+)
+async def readiness(
+    response: Response,
+) -> ReadinessResponse:
+    """Check whether PostgreSQL and Redis are reachable."""
+
+    settings: Settings = app.state.settings
+    cache: RedisCache = app.state.cache
+
+    postgres_ready, redis_ready = await asyncio.gather(
+        check_postgres_ready(
+            settings,
+        ),
+        _check_cache_ready(
+            cache,
+        ),
+    )
+
+    dependencies = DependencyStatus(
+        postgres=postgres_ready,
+        redis=redis_ready,
+    )
+
+    if not dependencies.ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    return ReadinessResponse(
+        status=("ready" if dependencies.ready else "not_ready"),
+        dependencies=dependencies,
+    )
+
+
+# =============================================================================
+# Readiness helpers
+# =============================================================================
+
+
+async def _check_cache_ready(
+    cache: RedisCache,
+) -> bool:
+    """Return whether the application-scoped Redis cache responds to PING."""
+
+    try:
+        return await cache.ping()
+
+    except CacheError:
+        logger.warning(
+            "Redis readiness check failed.",
+            exc_info=True,
+        )
+
+        return False
+
+
+# =============================================================================
+# Shutdown
+# =============================================================================
+
+
+async def _shutdown_resources(
+    *,
+    tmdb_client: TmdbClient | None,
+    http_client: httpx.AsyncClient | None,
+    cache: RedisCache | None,
+) -> None:
+    """Close initialized application resources.
+
+    Each shutdown operation is isolated so failure while closing one resource
+    does not prevent the remaining resources from being released.
+
+    ``TmdbClient`` does not close an externally supplied HTTP client, so the
+    shared ``httpx.AsyncClient`` is closed separately by the application.
+    """
+
+    resources: list[
+        tuple[
+            str,
+            Awaitable[None],
+        ]
+    ] = []
+
+    if tmdb_client is not None:
+        resources.append(
+            (
+                "TMDB client",
+                tmdb_client.aclose(),
+            )
+        )
+
+    if http_client is not None:
+        resources.append(
+            (
+                "shared HTTP client",
+                http_client.aclose(),
+            )
+        )
+
+    if cache is not None:
+        resources.append(
+            (
+                "Redis cache",
+                cache.aclose(),
+            )
+        )
+
+    if not resources:
+        return
+
+    results = await asyncio.gather(
+        *(operation for _, operation in resources),
+        return_exceptions=True,
+    )
+
+    for (
+        resource_name,
+        _,
+    ), result in zip(
+        resources,
+        results,
+        strict=True,
+    ):
+        if not isinstance(
+            result,
+            BaseException,
+        ):
+            continue
+
+        logger.error(
+            "Failed to close %s.",
+            resource_name,
+            exc_info=(
+                type(result),
+                result,
+                result.__traceback__,
+            ),
+        )

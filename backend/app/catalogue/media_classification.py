@@ -1,704 +1,1185 @@
-"""Cineara media classification for TMDB search results.
+"""Source-independent media classification for Cineara catalogue metadata.
 
-The module converts TMDB search metadata into a stable Cineara representation:
+This module classifies normalized Cineara media evidence rather than raw data
+from a specific metadata provider.
 
-- media type and structural format;
-- normalized genres for movies and TV series;
-- one optional cultural/editorial classification for TV series;
-- unknown TMDB genre IDs preserved for observability.
+Provider adapters are responsible for translating upstream metadata into
+``MediaClassificationEvidence`` before invoking this classifier. For example,
+TMDB genre IDs are translated through ``catalogue.genre_registry`` before they
+reach this module.
 
-The classification logic is deterministic and uses only metadata available on
-TMDB search results.
+The classifier supports Movie and TV media works and keeps several independent
+classification axes:
+
+``media kind``
+    The broad work family: Movie or TV.
+
+``media format``
+    Structural form such as Movie, Short Film, TV Movie, Series, Miniseries,
+    Special, OVA, or ONA.
+
+``cultural classification``
+    A culturally established or useful regional grouping such as Anime,
+    Donghua, Korean Animation, K-Drama, C-Drama, J-Drama, Taiwanese Drama,
+    Hong Kong Drama, Thai Drama, or Turkish Drama when the supplied evidence
+    is sufficiently strong.
+
+``programme classification``
+    A TV programme grouping such as Animated Series, Documentary Series,
+    Reality Series, Talk Show, News Program, Kids Series, or Soap.
+
+``genres``
+    Canonical provider-independent Cineara genres.
+
+``origin``
+    Normalized country and original-language metadata.
+
+Keeping these axes separate preserves complete catalogue information while
+allowing compact presentation to avoid redundant combinations such as:
+
+    Anime + Animation
+
+    Donghua + Animation
+
+    Korean Animation + Animation
+
+    K-Drama + Drama
+
+    Reality Series + Reality
+
+    TV Movie + TV Movie
+
+Canonical classifications intentionally use stable descriptive identifiers.
+Alternative names such as ``aeni``, ``dorama``, ``lakorn``, or ``dizi`` belong
+to search, localization, or synonym metadata rather than this classifier.
+
+This module owns deterministic classification only. It does not perform:
+
+- HTTP requests;
+- TMDB or Wikidata access;
+- provider-specific genre translation;
+- persistence;
+- caching;
+- localization;
+- synonym or alias resolution;
+- UI formatting;
+- Search orchestration;
+- user-library logic.
+
+People, companies, collections, and topics are not media works and therefore
+do not pass through this classifier.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
+from typing import Final
+
+from .genre_registry import (
+    MediaGenre,
+    normalize_media_genres,
+)
 
 # =============================================================================
-# Public enums
+# Media kind
 # =============================================================================
 
 
-class MediaType(StrEnum):
-    """Top-level Cineara media entity type."""
+class MediaKind(StrEnum):
+    """Top-level media-work families supported by the classifier."""
 
     MOVIE = "movie"
     TV = "tv"
-    PERSON = "person"
+
+
+# =============================================================================
+# Structural media format
+# =============================================================================
 
 
 class MediaFormat(StrEnum):
-    """Structural format displayed by Cineara."""
+    """Normalized structural form of a Cineara media work."""
 
     MOVIE = "movie"
+    SHORT_FILM = "short_film"
     TV_MOVIE = "tv_movie"
+
     SERIES = "series"
+    MINISERIES = "miniseries"
+
+    SPECIAL = "special"
+    OVA = "ova"
+    ONA = "ona"
 
 
-class MediaGenre(StrEnum):
-    """Normalized genre vocabulary used by Cineara."""
-
-    ACTION = "action"
-    ACTION_ADVENTURE = "action_adventure"
-    ADVENTURE = "adventure"
-    ANIMATION = "animation"
-    COMEDY = "comedy"
-    CRIME = "crime"
-    DOCUMENTARY = "documentary"
-    DRAMA = "drama"
-    FAMILY = "family"
-    FANTASY = "fantasy"
-    HISTORY = "history"
-    HORROR = "horror"
-    KIDS = "kids"
-    MUSIC = "music"
-    MYSTERY = "mystery"
-    NEWS = "news"
-    REALITY = "reality"
-    ROMANCE = "romance"
-    SCIENCE_FICTION = "science_fiction"
-    SCI_FI_FANTASY = "sci_fi_fantasy"
-    SOAP = "soap"
-    TALK = "talk"
-    THRILLER = "thriller"
-    TV_MOVIE = "tv_movie"
-    WAR = "war"
-    WAR_POLITICS = "war_politics"
-    WESTERN = "western"
+# =============================================================================
+# Cultural classification
+# =============================================================================
 
 
-class SpecialClassification(StrEnum):
-    """Cultural/editorial TV classifications shown alongside genres."""
+class CulturalClassification(StrEnum):
+    """High-confidence cultural classifications supported by Cineara.
+
+    Values are stable Cineara domain identifiers rather than every alternative
+    name used by audiences.
+
+    For example, South Korean animation is represented canonically as
+    ``KOREAN_ANIMATION``. Terms such as ``aeni`` may be supported separately
+    as search or localization aliases.
+    """
 
     ANIME = "anime"
+    DONGHUA = "donghua"
+    KOREAN_ANIMATION = "korean_animation"
+
     K_DRAMA = "k_drama"
     C_DRAMA = "c_drama"
     J_DRAMA = "j_drama"
     TAIWANESE_DRAMA = "taiwanese_drama"
     HONG_KONG_DRAMA = "hong_kong_drama"
     THAI_DRAMA = "thai_drama"
-    INDIAN_DRAMA = "indian_drama"
-    PAKISTANI_DRAMA = "pakistani_drama"
     TURKISH_DRAMA = "turkish_drama"
 
 
 # =============================================================================
-# Public result
+# Programme classification
 # =============================================================================
 
 
-@dataclass(frozen=True, slots=True)
-class MediaClassification:
-    """Normalized classification for one TMDB search result."""
+class ProgrammeClassification(StrEnum):
+    """Programme-level classifications supported by Cineara TV works."""
 
-    media_type: MediaType
-    media_format: MediaFormat | None
-    genres: tuple[MediaGenre, ...] = ()
-    special_classification: SpecialClassification | None = None
-    unknown_genre_ids: tuple[int, ...] = ()
+    ANIMATED_SERIES = "animated_series"
+    DOCUMENTARY_SERIES = "documentary_series"
+    REALITY_SERIES = "reality_series"
+    TALK_SHOW = "talk_show"
+    NEWS_PROGRAM = "news_program"
+    KIDS_SERIES = "kids_series"
+    SOAP = "soap"
+
+
+# =============================================================================
+# Origin
+# =============================================================================
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class MediaOrigin:
+    """Normalized country and original-language metadata."""
+
+    country_codes: tuple[str, ...] = ()
+    original_language: str | None = None
 
     def __post_init__(self) -> None:
-        if self.media_type is MediaType.PERSON:
-            if self.media_format is not None:
-                raise ValueError("A person cannot have a media format.")
-            if self.genres:
-                raise ValueError("A person cannot have media genres.")
-            if self.special_classification is not None:
-                raise ValueError(
-                    "A person cannot have a special classification."
-                )
-            if self.unknown_genre_ids:
-                raise ValueError(
-                    "A person cannot have unknown media genre IDs."
-                )
+        """Normalize and validate origin metadata."""
 
-        if (
-            self.media_type is MediaType.MOVIE
-            and self.special_classification is not None
-        ):
-            raise ValueError(
-                "Special classifications are defined for TV search results."
-            )
+        object.__setattr__(
+            self,
+            "country_codes",
+            _normalize_country_codes(
+                self.country_codes,
+            ),
+        )
+
+        object.__setattr__(
+            self,
+            "original_language",
+            _normalize_language(
+                self.original_language,
+            ),
+        )
 
     @property
-    def genre_labels(self) -> tuple[str, ...]:
-        """Return presentation labels in TMDB result order."""
+    def primary_country_code(self) -> str | None:
+        """Return the first supplied origin country when available."""
 
-        return tuple(_GENRE_LABELS[genre] for genre in self.genres)
-
-    @property
-    def special_classification_label(self) -> str | None:
-        """Return the presentation label for the special classification."""
-
-        if self.special_classification is None:
+        if not self.country_codes:
             return None
 
-        return _SPECIAL_CLASSIFICATION_LABELS[self.special_classification]
+        return self.country_codes[0]
 
     @property
-    def display_parts(self) -> tuple[str, ...]:
-        """Return compact metadata parts after the structural media format.
+    def is_multinational(self) -> bool:
+        """Return whether multiple origin countries are recorded."""
 
-        Examples:
-            Anime + Animation + Sci-Fi & Fantasy
-            K-Drama + Comedy
-            Comedy + Crime
-        """
+        return (
+            len(
+                self.country_codes,
+            )
+            > 1
+        )
 
-        parts: list[str] = []
+    @property
+    def is_empty(self) -> bool:
+        """Return whether no origin metadata is available."""
 
-        if self.special_classification_label is not None:
-            parts.append(self.special_classification_label)
-
-        parts.extend(self.genre_labels)
-        return tuple(parts)
+        return not self.country_codes and self.original_language is None
 
 
 # =============================================================================
-# TMDB genre mappings
+# Classification evidence
 # =============================================================================
 
 
-_MOVIE_GENRE_BY_ID: dict[int, MediaGenre] = {
-    28: MediaGenre.ACTION,
-    12: MediaGenre.ADVENTURE,
-    16: MediaGenre.ANIMATION,
-    35: MediaGenre.COMEDY,
-    80: MediaGenre.CRIME,
-    99: MediaGenre.DOCUMENTARY,
-    18: MediaGenre.DRAMA,
-    10751: MediaGenre.FAMILY,
-    14: MediaGenre.FANTASY,
-    36: MediaGenre.HISTORY,
-    27: MediaGenre.HORROR,
-    10402: MediaGenre.MUSIC,
-    9648: MediaGenre.MYSTERY,
-    10749: MediaGenre.ROMANCE,
-    878: MediaGenre.SCIENCE_FICTION,
-    10770: MediaGenre.TV_MOVIE,
-    53: MediaGenre.THRILLER,
-    10752: MediaGenre.WAR,
-    37: MediaGenre.WESTERN,
-}
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class MediaClassificationEvidence:
+    """Normalized facts supplied to Cineara's media classifier."""
 
-_TV_GENRE_BY_ID: dict[int, MediaGenre] = {
-    10759: MediaGenre.ACTION_ADVENTURE,
-    16: MediaGenre.ANIMATION,
-    35: MediaGenre.COMEDY,
-    80: MediaGenre.CRIME,
-    99: MediaGenre.DOCUMENTARY,
-    18: MediaGenre.DRAMA,
-    10751: MediaGenre.FAMILY,
-    10762: MediaGenre.KIDS,
-    9648: MediaGenre.MYSTERY,
-    10763: MediaGenre.NEWS,
-    10764: MediaGenre.REALITY,
-    10765: MediaGenre.SCI_FI_FANTASY,
-    10766: MediaGenre.SOAP,
-    10767: MediaGenre.TALK,
-    10768: MediaGenre.WAR_POLITICS,
-    37: MediaGenre.WESTERN,
-}
+    genres: tuple[MediaGenre, ...] = ()
+    country_codes: tuple[str, ...] = ()
+    original_language: str | None = None
+    format_hint: MediaFormat | None = None
 
-# A small number of TV search records can contain IDs from the movie
-# vocabulary. Mapping them preserves useful metadata instead of dropping a
-# genre TMDB supplied.
-_TV_FALLBACK_GENRE_BY_ID: dict[int, MediaGenre] = {
-    genre_id: genre
-    for genre_id, genre in _MOVIE_GENRE_BY_ID.items()
-    if genre_id not in _TV_GENRE_BY_ID
-}
+    def __post_init__(self) -> None:
+        """Normalize and validate supplied classification evidence."""
 
-_GENRE_LABELS: dict[MediaGenre, str] = {
-    MediaGenre.ACTION: "Action",
-    MediaGenre.ACTION_ADVENTURE: "Action & Adventure",
-    MediaGenre.ADVENTURE: "Adventure",
-    MediaGenre.ANIMATION: "Animation",
-    MediaGenre.COMEDY: "Comedy",
-    MediaGenre.CRIME: "Crime",
-    MediaGenre.DOCUMENTARY: "Documentary",
-    MediaGenre.DRAMA: "Drama",
-    MediaGenre.FAMILY: "Family",
-    MediaGenre.FANTASY: "Fantasy",
-    MediaGenre.HISTORY: "History",
-    MediaGenre.HORROR: "Horror",
-    MediaGenre.KIDS: "Kids",
-    MediaGenre.MUSIC: "Music",
-    MediaGenre.MYSTERY: "Mystery",
-    MediaGenre.NEWS: "News",
-    MediaGenre.REALITY: "Reality",
-    MediaGenre.ROMANCE: "Romance",
-    MediaGenre.SCIENCE_FICTION: "Science Fiction",
-    MediaGenre.SCI_FI_FANTASY: "Sci-Fi & Fantasy",
-    MediaGenre.SOAP: "Soap",
-    MediaGenre.TALK: "Talk",
-    MediaGenre.THRILLER: "Thriller",
-    MediaGenre.TV_MOVIE: "TV Movie",
-    MediaGenre.WAR: "War",
-    MediaGenre.WAR_POLITICS: "War & Politics",
-    MediaGenre.WESTERN: "Western",
-}
+        object.__setattr__(
+            self,
+            "genres",
+            normalize_media_genres(
+                self.genres,
+            ),
+        )
+
+        object.__setattr__(
+            self,
+            "country_codes",
+            _normalize_country_codes(
+                self.country_codes,
+            ),
+        )
+
+        object.__setattr__(
+            self,
+            "original_language",
+            _normalize_language(
+                self.original_language,
+            ),
+        )
+
+        if self.format_hint is not None and not isinstance(
+            self.format_hint,
+            MediaFormat,
+        ):
+            raise TypeError("format_hint must be a MediaFormat or None.")
+
+    @property
+    def origin(self) -> MediaOrigin | None:
+        """Return normalized origin metadata when evidence exists."""
+
+        origin = MediaOrigin(
+            country_codes=self.country_codes,
+            original_language=self.original_language,
+        )
+
+        if origin.is_empty:
+            return None
+
+        return origin
+
 
 # =============================================================================
-# Special-classification metadata
+# Classification result
 # =============================================================================
 
 
-_COUNTRY_JAPAN = "JP"
-_COUNTRY_SOUTH_KOREA = "KR"
-_COUNTRY_CHINA = "CN"
-_COUNTRY_TAIWAN = "TW"
-_COUNTRY_HONG_KONG = "HK"
-_COUNTRY_THAILAND = "TH"
-_COUNTRY_INDIA = "IN"
-_COUNTRY_PAKISTAN = "PK"
-_COUNTRY_TURKEY = "TR"
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class MediaClassification:
+    """Final Cineara classification derived from normalized evidence."""
 
-_LANGUAGE_JAPANESE = "ja"
-_LANGUAGE_KOREAN = "ko"
-_LANGUAGE_CHINESE = "zh"
-_LANGUAGE_CANTONESE = "cn"
-_LANGUAGE_THAI = "th"
-_LANGUAGE_TURKISH = "tr"
+    media_kind: MediaKind
+    media_format: MediaFormat
 
-_SPECIAL_CLASSIFICATION_LABELS: dict[SpecialClassification, str] = {
-    SpecialClassification.ANIME: "Anime",
-    SpecialClassification.K_DRAMA: "K-Drama",
-    SpecialClassification.C_DRAMA: "C-Drama",
-    SpecialClassification.J_DRAMA: "J-Drama",
-    SpecialClassification.TAIWANESE_DRAMA: "Taiwanese Drama",
-    SpecialClassification.HONG_KONG_DRAMA: "Hong Kong Drama",
-    SpecialClassification.THAI_DRAMA: "Thai Drama",
-    SpecialClassification.INDIAN_DRAMA: "Indian Drama",
-    SpecialClassification.PAKISTANI_DRAMA: "Pakistani Drama",
-    SpecialClassification.TURKISH_DRAMA: "Turkish Drama",
-}
+    genres: tuple[MediaGenre, ...] = ()
+
+    cultural_classification: CulturalClassification | None = None
+    programme_classification: ProgrammeClassification | None = None
+
+    origin: MediaOrigin | None = None
+
+    def __post_init__(self) -> None:
+        """Normalize and validate the completed classification."""
+
+        if not isinstance(
+            self.media_kind,
+            MediaKind,
+        ):
+            raise TypeError("media_kind must be a MediaKind.")
+
+        if not isinstance(
+            self.media_format,
+            MediaFormat,
+        ):
+            raise TypeError("media_format must be a MediaFormat.")
+
+        object.__setattr__(
+            self,
+            "genres",
+            normalize_media_genres(
+                self.genres,
+            ),
+        )
+
+        if self.cultural_classification is not None and not isinstance(
+            self.cultural_classification,
+            CulturalClassification,
+        ):
+            raise TypeError(
+                "cultural_classification must be a "
+                "CulturalClassification or None."
+            )
+
+        if self.programme_classification is not None and not isinstance(
+            self.programme_classification,
+            ProgrammeClassification,
+        ):
+            raise TypeError(
+                "programme_classification must be a "
+                "ProgrammeClassification or None."
+            )
+
+        if self.origin is not None and not isinstance(
+            self.origin,
+            MediaOrigin,
+        ):
+            raise TypeError("origin must be a MediaOrigin or None.")
+
+        _validate_result(
+            self,
+        )
+
+    @property
+    def redundant_genres(self) -> frozenset[MediaGenre]:
+        """Return genres made redundant by stronger classifications."""
+
+        redundant: set[MediaGenre] = set()
+
+        redundant.update(
+            _REDUNDANT_GENRES_BY_FORMAT.get(
+                self.media_format,
+                frozenset(),
+            )
+        )
+
+        if self.cultural_classification is not None:
+            redundant.update(
+                _REDUNDANT_GENRES_BY_CULTURAL_CLASSIFICATION.get(
+                    self.cultural_classification,
+                    frozenset(),
+                )
+            )
+
+        if self.programme_classification is not None:
+            redundant.update(
+                _REDUNDANT_GENRES_BY_PROGRAMME_CLASSIFICATION.get(
+                    self.programme_classification,
+                    frozenset(),
+                )
+            )
+
+        return frozenset(
+            redundant,
+        )
+
+    @property
+    def display_genres(self) -> tuple[MediaGenre, ...]:
+        """Return genres suitable for compact presentation."""
+
+        redundant = self.redundant_genres
+
+        if not redundant:
+            return self.genres
+
+        return tuple(genre for genre in self.genres if genre not in redundant)
 
 
-@dataclass(frozen=True, slots=True)
+# =============================================================================
+# Regional scripted-series rules
+# =============================================================================
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class _RegionalSeriesRule:
+    """Origin rule for one regional scripted-series classification."""
+
     country_code: str
-    classification: SpecialClassification
-    expected_languages: frozenset[str] | None = None
+    original_languages: frozenset[str]
+    classification: CulturalClassification
 
 
-_REGIONAL_SERIES_RULES: tuple[_RegionalSeriesRule, ...] = (
+_REGIONAL_SERIES_RULES: Final[
+    tuple[
+        _RegionalSeriesRule,
+        ...,
+    ]
+] = (
     _RegionalSeriesRule(
-        country_code=_COUNTRY_SOUTH_KOREA,
-        classification=SpecialClassification.K_DRAMA,
-        expected_languages=frozenset({_LANGUAGE_KOREAN}),
-    ),
-    _RegionalSeriesRule(
-        country_code=_COUNTRY_CHINA,
-        classification=SpecialClassification.C_DRAMA,
-        expected_languages=frozenset({_LANGUAGE_CHINESE}),
-    ),
-    _RegionalSeriesRule(
-        country_code=_COUNTRY_TAIWAN,
-        classification=SpecialClassification.TAIWANESE_DRAMA,
-        expected_languages=frozenset({_LANGUAGE_CHINESE}),
-    ),
-    _RegionalSeriesRule(
-        country_code=_COUNTRY_HONG_KONG,
-        classification=SpecialClassification.HONG_KONG_DRAMA,
-        expected_languages=frozenset(
+        country_code="KR",
+        original_languages=frozenset(
             {
-                _LANGUAGE_CHINESE,
-                _LANGUAGE_CANTONESE,
+                "ko",
             }
         ),
+        classification=CulturalClassification.K_DRAMA,
     ),
     _RegionalSeriesRule(
-        country_code=_COUNTRY_JAPAN,
-        classification=SpecialClassification.J_DRAMA,
-        expected_languages=frozenset({_LANGUAGE_JAPANESE}),
+        country_code="CN",
+        original_languages=frozenset(
+            {
+                "zh",
+            }
+        ),
+        classification=CulturalClassification.C_DRAMA,
     ),
     _RegionalSeriesRule(
-        country_code=_COUNTRY_THAILAND,
-        classification=SpecialClassification.THAI_DRAMA,
-        expected_languages=frozenset({_LANGUAGE_THAI}),
+        country_code="JP",
+        original_languages=frozenset(
+            {
+                "ja",
+            }
+        ),
+        classification=CulturalClassification.J_DRAMA,
     ),
     _RegionalSeriesRule(
-        country_code=_COUNTRY_INDIA,
-        classification=SpecialClassification.INDIAN_DRAMA,
+        country_code="TW",
+        original_languages=frozenset(
+            {
+                "zh",
+            }
+        ),
+        classification=CulturalClassification.TAIWANESE_DRAMA,
     ),
     _RegionalSeriesRule(
-        country_code=_COUNTRY_PAKISTAN,
-        classification=SpecialClassification.PAKISTANI_DRAMA,
+        country_code="HK",
+        original_languages=frozenset(
+            {
+                "zh",
+                "yue",
+            }
+        ),
+        classification=CulturalClassification.HONG_KONG_DRAMA,
     ),
     _RegionalSeriesRule(
-        country_code=_COUNTRY_TURKEY,
-        classification=SpecialClassification.TURKISH_DRAMA,
-        expected_languages=frozenset({_LANGUAGE_TURKISH}),
+        country_code="TH",
+        original_languages=frozenset(
+            {
+                "th",
+            }
+        ),
+        classification=CulturalClassification.THAI_DRAMA,
+    ),
+    _RegionalSeriesRule(
+        country_code="TR",
+        original_languages=frozenset(
+            {
+                "tr",
+            }
+        ),
+        classification=CulturalClassification.TURKISH_DRAMA,
     ),
 )
 
-_NON_SCRIPTED_TV_GENRES: frozenset[MediaGenre] = frozenset(
-    {
-        MediaGenre.DOCUMENTARY,
-        MediaGenre.NEWS,
-        MediaGenre.REALITY,
-        MediaGenre.TALK,
-    }
-)
+# =============================================================================
+# Genre evidence groups
+# =============================================================================
 
-_SCRIPTED_COMPATIBLE_TV_GENRES: frozenset[MediaGenre] = frozenset(
+
+_SCRIPTED_COMPATIBLE_TV_GENRES: Final[frozenset[MediaGenre]] = frozenset(
     {
         MediaGenre.ACTION,
-        MediaGenre.ACTION_ADVENTURE,
         MediaGenre.ADVENTURE,
         MediaGenre.COMEDY,
         MediaGenre.CRIME,
         MediaGenre.DRAMA,
         MediaGenre.FAMILY,
         MediaGenre.FANTASY,
-        MediaGenre.HISTORY,
-        MediaGenre.HORROR,
-        MediaGenre.KIDS,
-        MediaGenre.MUSIC,
         MediaGenre.MYSTERY,
+        MediaGenre.POLITICS,
         MediaGenre.ROMANCE,
         MediaGenre.SCIENCE_FICTION,
-        MediaGenre.SCI_FI_FANTASY,
         MediaGenre.SOAP,
         MediaGenre.THRILLER,
-        MediaGenre.TV_MOVIE,
         MediaGenre.WAR,
-        MediaGenre.WAR_POLITICS,
         MediaGenre.WESTERN,
+    }
+)
+
+_REGIONAL_SCRIPTED_BLOCKERS: Final[frozenset[MediaGenre]] = frozenset(
+    {
+        MediaGenre.ANIMATION,
+        MediaGenre.DOCUMENTARY,
+        MediaGenre.KIDS,
+        MediaGenre.NEWS,
+        MediaGenre.REALITY,
+        MediaGenre.TALK,
+    }
+)
+
+_DIRECT_PROGRAMME_CLASSIFICATIONS: Final[
+    tuple[
+        tuple[
+            MediaGenre,
+            ProgrammeClassification,
+        ],
+        ...,
+    ]
+] = (
+    (
+        MediaGenre.NEWS,
+        ProgrammeClassification.NEWS_PROGRAM,
+    ),
+    (
+        MediaGenre.TALK,
+        ProgrammeClassification.TALK_SHOW,
+    ),
+    (
+        MediaGenre.REALITY,
+        ProgrammeClassification.REALITY_SERIES,
+    ),
+    (
+        MediaGenre.DOCUMENTARY,
+        ProgrammeClassification.DOCUMENTARY_SERIES,
+    ),
+    (
+        MediaGenre.SOAP,
+        ProgrammeClassification.SOAP,
+    ),
+    (
+        MediaGenre.KIDS,
+        ProgrammeClassification.KIDS_SERIES,
+    ),
+)
+
+# =============================================================================
+# Animation cultural classifications
+# =============================================================================
+
+
+_ANIMATION_CULTURAL_CLASSIFICATIONS: Final[
+    frozenset[CulturalClassification]
+] = frozenset(
+    {
+        CulturalClassification.ANIME,
+        CulturalClassification.DONGHUA,
+        CulturalClassification.KOREAN_ANIMATION,
+    }
+)
+
+# =============================================================================
+# Display de-duplication
+# =============================================================================
+
+
+_REDUNDANT_GENRES_BY_FORMAT: Final[
+    Mapping[
+        MediaFormat,
+        frozenset[MediaGenre],
+    ]
+] = MappingProxyType(
+    {
+        MediaFormat.TV_MOVIE: frozenset(
+            {
+                MediaGenre.TV_MOVIE,
+            }
+        ),
+    }
+)
+
+_REDUNDANT_GENRES_BY_CULTURAL_CLASSIFICATION: Final[
+    Mapping[
+        CulturalClassification,
+        frozenset[MediaGenre],
+    ]
+] = MappingProxyType(
+    {
+        CulturalClassification.ANIME: frozenset(
+            {
+                MediaGenre.ANIMATION,
+            }
+        ),
+        CulturalClassification.DONGHUA: frozenset(
+            {
+                MediaGenre.ANIMATION,
+            }
+        ),
+        CulturalClassification.KOREAN_ANIMATION: frozenset(
+            {
+                MediaGenre.ANIMATION,
+            }
+        ),
+        CulturalClassification.K_DRAMA: frozenset(
+            {
+                MediaGenre.DRAMA,
+            }
+        ),
+        CulturalClassification.C_DRAMA: frozenset(
+            {
+                MediaGenre.DRAMA,
+            }
+        ),
+        CulturalClassification.J_DRAMA: frozenset(
+            {
+                MediaGenre.DRAMA,
+            }
+        ),
+        CulturalClassification.TAIWANESE_DRAMA: frozenset(
+            {
+                MediaGenre.DRAMA,
+            }
+        ),
+        CulturalClassification.HONG_KONG_DRAMA: frozenset(
+            {
+                MediaGenre.DRAMA,
+            }
+        ),
+        CulturalClassification.THAI_DRAMA: frozenset(
+            {
+                MediaGenre.DRAMA,
+            }
+        ),
+        CulturalClassification.TURKISH_DRAMA: frozenset(
+            {
+                MediaGenre.DRAMA,
+            }
+        ),
+    }
+)
+
+_REDUNDANT_GENRES_BY_PROGRAMME_CLASSIFICATION: Final[
+    Mapping[
+        ProgrammeClassification,
+        frozenset[MediaGenre],
+    ]
+] = MappingProxyType(
+    {
+        ProgrammeClassification.ANIMATED_SERIES: frozenset(
+            {
+                MediaGenre.ANIMATION,
+            }
+        ),
+        ProgrammeClassification.DOCUMENTARY_SERIES: frozenset(
+            {
+                MediaGenre.DOCUMENTARY,
+            }
+        ),
+        ProgrammeClassification.REALITY_SERIES: frozenset(
+            {
+                MediaGenre.REALITY,
+            }
+        ),
+        ProgrammeClassification.TALK_SHOW: frozenset(
+            {
+                MediaGenre.TALK,
+            }
+        ),
+        ProgrammeClassification.NEWS_PROGRAM: frozenset(
+            {
+                MediaGenre.NEWS,
+            }
+        ),
+        ProgrammeClassification.KIDS_SERIES: frozenset(
+            {
+                MediaGenre.KIDS,
+            }
+        ),
+        ProgrammeClassification.SOAP: frozenset(
+            {
+                MediaGenre.SOAP,
+            }
+        ),
+    }
+)
+
+# =============================================================================
+# Format compatibility
+# =============================================================================
+
+
+_MOVIE_FORMATS: Final[frozenset[MediaFormat]] = frozenset(
+    {
+        MediaFormat.MOVIE,
+        MediaFormat.SHORT_FILM,
+        MediaFormat.TV_MOVIE,
+        MediaFormat.SPECIAL,
+        MediaFormat.OVA,
+        MediaFormat.ONA,
+    }
+)
+
+_TV_FORMATS: Final[frozenset[MediaFormat]] = frozenset(
+    {
+        MediaFormat.SERIES,
+        MediaFormat.MINISERIES,
+        MediaFormat.SPECIAL,
+        MediaFormat.OVA,
+        MediaFormat.ONA,
     }
 )
 
 
 # =============================================================================
-# Public API
+# Public classification API
 # =============================================================================
 
 
 def classify_media(
-    media_type: MediaType | str,
-    *,
-    genre_ids: Iterable[int] | None = None,
-    origin_country: Iterable[str] | None = None,
-    original_language: str | None = None,
+    media_kind: MediaKind | str,
+    evidence: MediaClassificationEvidence,
 ) -> MediaClassification:
-    """Classify one movie, TV or person search result."""
+    """Classify normalized evidence for any supported media work."""
 
-    normalized_media_type = _coerce_media_type(media_type)
+    normalized_media_kind = _normalize_media_kind(
+        media_kind,
+    )
 
-    if normalized_media_type is MediaType.MOVIE:
-        return classify_movie(genre_ids=genre_ids)
+    normalized_evidence = _normalize_evidence(
+        evidence,
+    )
 
-    if normalized_media_type is MediaType.TV:
-        return classify_tv(
-            genre_ids=genre_ids,
-            origin_country=origin_country,
-            original_language=original_language,
+    if normalized_media_kind is MediaKind.MOVIE:
+        return classify_movie(
+            normalized_evidence,
         )
 
-    return classify_person()
+    return classify_tv(
+        normalized_evidence,
+    )
 
 
 def classify_movie(
-    *,
-    genre_ids: Iterable[int] | None = None,
+    evidence: MediaClassificationEvidence,
 ) -> MediaClassification:
-    """Classify one TMDB movie search result."""
+    """Classify normalized evidence for a Movie work."""
 
-    genres, unknown_genre_ids = _extract_genres(
-        genre_ids,
-        mapping=_MOVIE_GENRE_BY_ID,
+    normalized_evidence = _normalize_evidence(
+        evidence,
     )
 
-    media_format = (
-        MediaFormat.TV_MOVIE
-        if MediaGenre.TV_MOVIE in genres
-        else MediaFormat.MOVIE
+    genres = frozenset(
+        normalized_evidence.genres,
+    )
+
+    cultural_classification = _classify_animation_culture(
+        genres=genres,
+        country_codes=frozenset(
+            normalized_evidence.country_codes,
+        ),
+        original_language=normalized_evidence.original_language,
     )
 
     return MediaClassification(
-        media_type=MediaType.MOVIE,
-        media_format=media_format,
-        genres=genres,
-        special_classification=None,
-        unknown_genre_ids=unknown_genre_ids,
+        media_kind=MediaKind.MOVIE,
+        media_format=_resolve_movie_format(
+            normalized_evidence,
+        ),
+        genres=normalized_evidence.genres,
+        cultural_classification=cultural_classification,
+        origin=normalized_evidence.origin,
     )
 
 
 def classify_tv(
-    *,
-    genre_ids: Iterable[int] | None = None,
-    origin_country: Iterable[str] | None = None,
-    original_language: str | None = None,
+    evidence: MediaClassificationEvidence,
 ) -> MediaClassification:
-    """Classify one TMDB TV search result."""
+    """Classify normalized evidence for a TV work."""
 
-    genres, unknown_genre_ids = _extract_tv_genres(genre_ids)
-    countries = _normalize_country_codes(origin_country)
-    language = _normalize_language(original_language)
-
-    special_classification = _classify_tv_special(
-        genres=genres,
-        countries=countries,
-        original_language=language,
+    normalized_evidence = _normalize_evidence(
+        evidence,
     )
 
-    return MediaClassification(
-        media_type=MediaType.TV,
-        media_format=MediaFormat.SERIES,
-        genres=genres,
-        special_classification=special_classification,
-        unknown_genre_ids=unknown_genre_ids,
+    genres = frozenset(
+        normalized_evidence.genres,
     )
 
+    country_codes = frozenset(
+        normalized_evidence.country_codes,
+    )
 
-def classify_person() -> MediaClassification:
-    """Return the structural classification for a person search result."""
+    cultural_classification = _classify_animation_culture(
+        genres=genres,
+        country_codes=country_codes,
+        original_language=normalized_evidence.original_language,
+    )
+
+    programme_classification = _classify_programme_type(
+        genres=genres,
+        cultural_classification=cultural_classification,
+    )
+
+    if cultural_classification is None and _is_regional_scripted_candidate(
+        genres,
+    ):
+        cultural_classification = _classify_regional_scripted_series(
+            country_codes=country_codes,
+            original_language=normalized_evidence.original_language,
+        )
 
     return MediaClassification(
-        media_type=MediaType.PERSON,
-        media_format=None,
+        media_kind=MediaKind.TV,
+        media_format=_resolve_tv_format(
+            normalized_evidence,
+        ),
+        genres=normalized_evidence.genres,
+        cultural_classification=cultural_classification,
+        programme_classification=programme_classification,
+        origin=normalized_evidence.origin,
     )
 
 
 # =============================================================================
-# TV special classification
+# Format resolution
 # =============================================================================
 
 
-def _classify_tv_special(
+def _resolve_movie_format(
+    evidence: MediaClassificationEvidence,
+) -> MediaFormat:
+    """Resolve a structural format for a Movie work."""
+
+    format_hint = evidence.format_hint
+
+    if format_hint is not None:
+        if format_hint not in _MOVIE_FORMATS:
+            raise ValueError(
+                f"Media format {format_hint.value!r} is not "
+                "compatible with a Movie work."
+            )
+
+        return format_hint
+
+    if MediaGenre.TV_MOVIE in evidence.genres:
+        return MediaFormat.TV_MOVIE
+
+    return MediaFormat.MOVIE
+
+
+def _resolve_tv_format(
+    evidence: MediaClassificationEvidence,
+) -> MediaFormat:
+    """Resolve a structural format for a TV work."""
+
+    format_hint = evidence.format_hint
+
+    if format_hint is not None:
+        if format_hint not in _TV_FORMATS:
+            raise ValueError(
+                f"Media format {format_hint.value!r} is not "
+                "compatible with a TV work."
+            )
+
+        return format_hint
+
+    return MediaFormat.SERIES
+
+
+# =============================================================================
+# Cultural classification
+# =============================================================================
+
+
+def _classify_animation_culture(
     *,
-    genres: tuple[MediaGenre, ...],
-    countries: frozenset[str],
+    genres: frozenset[MediaGenre],
+    country_codes: frozenset[str],
     original_language: str | None,
-) -> SpecialClassification | None:
-    """Return one high-confidence TV classification."""
+) -> CulturalClassification | None:
+    """Classify animation from strong origin and language evidence."""
 
-    genre_set = frozenset(genres)
+    if MediaGenre.ANIMATION not in genres:
+        return None
 
-    if MediaGenre.ANIMATION in genre_set and _COUNTRY_JAPAN in countries:
-        return SpecialClassification.ANIME
+    if "JP" in country_codes and original_language == "ja":
+        return CulturalClassification.ANIME
 
-    if not _is_scripted_regional_series_candidate(genre_set):
+    if "CN" in country_codes and original_language == "zh":
+        return CulturalClassification.DONGHUA
+
+    if "KR" in country_codes and original_language == "ko":
+        return CulturalClassification.KOREAN_ANIMATION
+
+    return None
+
+
+def _classify_regional_scripted_series(
+    *,
+    country_codes: frozenset[str],
+    original_language: str | None,
+) -> CulturalClassification | None:
+    """Classify a regional scripted TV work from strong origin evidence."""
+
+    if not country_codes or original_language is None:
         return None
 
     matches = tuple(
         rule.classification
         for rule in _REGIONAL_SERIES_RULES
-        if _regional_rule_matches(
-            rule=rule,
-            countries=countries,
-            original_language=original_language,
+        if (
+            rule.country_code in country_codes
+            and original_language in rule.original_languages
         )
     )
 
-    if len(matches) != 1:
+    if (
+        len(
+            matches,
+        )
+        != 1
+    ):
         return None
 
     return matches[0]
 
 
-def _is_scripted_regional_series_candidate(
+def _is_regional_scripted_candidate(
     genres: frozenset[MediaGenre],
 ) -> bool:
-    """Return whether genres are compatible with a scripted regional series."""
+    """Return whether TV genres support regional scripted classification."""
 
     if not genres:
         return False
 
-    if MediaGenre.ANIMATION in genres:
+    if not genres.isdisjoint(
+        _REGIONAL_SCRIPTED_BLOCKERS,
+    ):
         return False
 
-    if not genres.isdisjoint(_NON_SCRIPTED_TV_GENRES):
-        return False
+    return not genres.isdisjoint(
+        _SCRIPTED_COMPATIBLE_TV_GENRES,
+    )
 
-    return not genres.isdisjoint(_SCRIPTED_COMPATIBLE_TV_GENRES)
 
-
-def _regional_rule_matches(
+def _classify_programme_type(
     *,
-    rule: _RegionalSeriesRule,
-    countries: frozenset[str],
-    original_language: str | None,
-) -> bool:
-    """Return whether explicit regional metadata satisfies one rule."""
+    genres: frozenset[MediaGenre],
+    cultural_classification: CulturalClassification | None,
+) -> ProgrammeClassification | None:
+    """Resolve a TV programme classification from canonical genres."""
 
-    if rule.country_code not in countries:
-        return False
+    for genre, classification in _DIRECT_PROGRAMME_CLASSIFICATIONS:
+        if genre in genres:
+            return classification
 
-    if rule.expected_languages is None:
-        return True
+    if (
+        MediaGenre.ANIMATION in genres
+        and cultural_classification not in _ANIMATION_CULTURAL_CLASSIFICATIONS
+    ):
+        return ProgrammeClassification.ANIMATED_SERIES
 
-    if original_language is None:
-        return True
-
-    return original_language in rule.expected_languages
-
-
-# =============================================================================
-# Genre extraction
-# =============================================================================
-
-
-def _extract_genres(
-    genre_ids: Iterable[int] | None,
-    *,
-    mapping: dict[int, MediaGenre],
-) -> tuple[tuple[MediaGenre, ...], tuple[int, ...]]:
-    """Map TMDB genre IDs while preserving their original order."""
-
-    normalized_ids = _normalize_genre_ids(genre_ids)
-
-    genres: list[MediaGenre] = []
-    unknown_ids: list[int] = []
-    seen_genres: set[MediaGenre] = set()
-
-    for genre_id in normalized_ids:
-        genre = mapping.get(genre_id)
-
-        if genre is None:
-            unknown_ids.append(genre_id)
-            continue
-
-        if genre in seen_genres:
-            continue
-
-        genres.append(genre)
-        seen_genres.add(genre)
-
-    return tuple(genres), tuple(unknown_ids)
-
-
-def _extract_tv_genres(
-    genre_ids: Iterable[int] | None,
-) -> tuple[tuple[MediaGenre, ...], tuple[int, ...]]:
-    """Map TV genre IDs using the TV vocabulary and supported fallbacks."""
-
-    normalized_ids = _normalize_genre_ids(genre_ids)
-
-    genres: list[MediaGenre] = []
-    unknown_ids: list[int] = []
-    seen_genres: set[MediaGenre] = set()
-
-    for genre_id in normalized_ids:
-        genre = _TV_GENRE_BY_ID.get(genre_id)
-
-        if genre is None:
-            genre = _TV_FALLBACK_GENRE_BY_ID.get(genre_id)
-
-        if genre is None:
-            unknown_ids.append(genre_id)
-            continue
-
-        if genre in seen_genres:
-            continue
-
-        genres.append(genre)
-        seen_genres.add(genre)
-
-    return tuple(genres), tuple(unknown_ids)
+    return None
 
 
 # =============================================================================
-# Normalization
+# Validation
 # =============================================================================
 
 
-def _normalize_genre_ids(
-    values: Iterable[int] | None,
-) -> tuple[int, ...]:
-    """Normalize integer TMDB genre IDs without changing their order."""
+def _validate_result(
+    classification: MediaClassification,
+) -> None:
+    """Validate compatibility between classification axes."""
 
-    if values is None:
-        return ()
+    if classification.media_kind is MediaKind.MOVIE:
+        if classification.media_format not in _MOVIE_FORMATS:
+            raise ValueError(
+                "Movie classification contains an incompatible media format."
+            )
 
-    normalized: list[int] = []
-    seen: set[int] = set()
+        if classification.programme_classification is not None:
+            raise ValueError(
+                "Movie classification cannot contain a TV "
+                "programme classification."
+            )
 
-    for value in values:
-        if isinstance(value, bool) or not isinstance(value, int):
-            continue
+        return
 
-        if value <= 0 or value in seen:
-            continue
+    if classification.media_format not in _TV_FORMATS:
+        raise ValueError(
+            "TV classification contains an incompatible media format."
+        )
 
-        normalized.append(value)
-        seen.add(value)
 
-    return tuple(normalized)
+def _normalize_evidence(
+    value: MediaClassificationEvidence,
+) -> MediaClassificationEvidence:
+    """Validate normalized classification evidence."""
+
+    if not isinstance(
+        value,
+        MediaClassificationEvidence,
+    ):
+        raise TypeError("evidence must be MediaClassificationEvidence.")
+
+    return value
+
+
+def _normalize_media_kind(
+    value: MediaKind | str,
+) -> MediaKind:
+    """Normalize a supported media-kind value."""
+
+    if isinstance(
+        value,
+        MediaKind,
+    ):
+        return value
+
+    if not isinstance(
+        value,
+        str,
+    ):
+        raise TypeError("media_kind must be a MediaKind or string.")
+
+    normalized = value.strip().lower()
+
+    if not normalized:
+        raise ValueError("media_kind must not be blank.")
+
+    if normalized == MediaKind.MOVIE.value:
+        return MediaKind.MOVIE
+
+    if normalized == MediaKind.TV.value:
+        return MediaKind.TV
+
+    supported = ", ".join(item.value for item in MediaKind)
+
+    raise ValueError(
+        f"Unsupported media kind {value!r}. Supported values are: {supported}."
+    )
+
+
+# =============================================================================
+# Country-code normalization
+# =============================================================================
 
 
 def _normalize_country_codes(
-    values: Iterable[str] | None,
-) -> frozenset[str]:
-    """Normalize ISO-style two-letter country codes."""
+    values: Iterable[str],
+) -> tuple[str, ...]:
+    """Normalize and deduplicate country codes."""
 
-    if values is None:
-        return frozenset()
-
-    if isinstance(values, str):
-        iterable: Iterable[str] = (values,)
-    else:
-        iterable = values
-
-    normalized: set[str] = set()
-
-    for value in iterable:
-        if not isinstance(value, str):
-            continue
-
-        code = value.strip().upper()
-
-        if len(code) == 2 and code.isalpha():
-            normalized.add(code)
-
-    return frozenset(normalized)
-
-
-def _normalize_language(value: str | None) -> str | None:
-    """Normalize a TMDB original-language code."""
-
-    if not isinstance(value, str):
-        return None
-
-    normalized = value.strip().lower()
-    return normalized or None
-
-
-def _coerce_media_type(value: MediaType | str) -> MediaType:
-    """Normalize the public media-type argument."""
-
-    if isinstance(value, MediaType):
-        return value
-
-    if not isinstance(value, str):
+    if isinstance(
+        values,
+        (
+            str,
+            bytes,
+        ),
+    ):
         raise TypeError(
-            "media_type must be a MediaType or string, "
-            f"got {type(value).__name__}"
+            "country_codes must be an iterable of country-code strings."
         )
 
-    normalized = value.strip().lower()
-
     try:
-        return MediaType(normalized)
-    except ValueError as exc:
-        allowed = ", ".join(media_type.value for media_type in MediaType)
-        raise ValueError(
-            f"Unsupported media_type {value!r}. Expected one of: {allowed}"
+        iterator = iter(
+            values,
+        )
+
+    except TypeError as exc:
+        raise TypeError(
+            "country_codes must be an iterable of country-code strings."
         ) from exc
 
+    normalized_codes: list[str] = []
+    seen_codes: set[str] = set()
 
-__all__ = [
-    "MediaClassification",
-    "MediaFormat",
-    "MediaGenre",
-    "MediaType",
-    "SpecialClassification",
-    "classify_media",
-    "classify_movie",
-    "classify_person",
-    "classify_tv",
-]
+    for raw_value in iterator:
+        if not isinstance(
+            raw_value,
+            str,
+        ):
+            raise TypeError("Each country code must be a string.")
+
+        code = raw_value.strip().upper()
+
+        if not code:
+            continue
+
+        if not _is_valid_country_code(
+            code,
+        ):
+            raise ValueError(f"Invalid country code {raw_value!r}.")
+
+        if code in seen_codes:
+            continue
+
+        normalized_codes.append(
+            code,
+        )
+
+        seen_codes.add(
+            code,
+        )
+
+    return tuple(
+        normalized_codes,
+    )
+
+
+def _is_valid_country_code(
+    value: str,
+) -> bool:
+    """Return whether a normalized country code has valid syntax."""
+
+    return len(value) == 2 and all(
+        "A" <= character <= "Z" for character in value
+    )
+
+
+# =============================================================================
+# Language normalization
+# =============================================================================
+
+
+def _normalize_language(
+    value: str | None,
+) -> str | None:
+    """Normalize an original-language value to its primary subtag."""
+
+    if value is None:
+        return None
+
+    if not isinstance(
+        value,
+        str,
+    ):
+        raise TypeError("original_language must be a string or None.")
+
+    normalized = (
+        value.strip()
+        .lower()
+        .replace(
+            "_",
+            "-",
+        )
+    )
+
+    if not normalized:
+        return None
+
+    primary_language = normalized.split(
+        "-",
+        maxsplit=1,
+    )[0]
+
+    if not 2 <= len(
+        primary_language,
+    ) <= 8 or not all(
+        "a" <= character <= "z" for character in primary_language
+    ):
+        raise ValueError(f"Invalid original language {value!r}.")
+
+    return primary_language

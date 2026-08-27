@@ -1,140 +1,102 @@
-"""Raw TMDB movie-detail models.
+"""Raw response models for TMDB movie-detail endpoints.
 
-These models represent data received directly from:
+This module contains the Pydantic transport models used to deserialize the
+top-level response returned by:
 
     GET /movie/{movie_id}
 
-They belong exclusively to the TMDB integration layer and must never be
-returned directly to Cineara clients.
+These models belong exclusively to Cineara's TMDB integration layer.
 
-Search enrichment
+They represent factual metadata returned by TMDB and must not contain:
+
+- Cineara media classifications;
+- Search-specific behavior;
+- generated image URLs;
+- display formatting;
+- cache state;
+- persistence state;
+- user-library information;
+- presentation labels;
+- application-specific business rules.
+
+Raw TMDB movie data must be mapped into Cineara-owned domain or API models
+before it leaves the backend integration boundary.
+
+Shared TMDB transport structures such as genres, production companies,
+production countries, and spoken languages are defined in ``common.py``.
+Movie-specific structures remain in this module.
+
+Design principles
 -----------------
-Cineara may selectively request movie details when Search metadata is
-insufficient for a high-confidence classification.
+1. Preserve TMDB's data shape.
 
-For example:
+   These models describe upstream TMDB data rather than Cineara's public API.
 
-    Animation
-    + original_language == "ja"
-    + missing production-country metadata
+2. Keep artwork as raw TMDB paths.
 
-may trigger one cached movie-details request so Cineara can determine whether
-the title is Anime.
+   Fields such as ``poster_path``, ``backdrop_path``, and ``logo_path`` remain
+   relative paths. Final image URLs are constructed by ``image_url.py``.
 
-Movie details are cached as reusable core metadata and may later be reused by
-the movie-detail page rather than fetched again.
+3. Keep dates as strings.
+
+   TMDB may return missing or empty dates for incomplete catalogue entries.
+   Parsing and presentation belong to higher application layers.
+
+4. Handle optional metadata defensively.
+
+   Metadata that may legitimately be missing should not cause the complete
+   movie response to fail validation.
+
+5. Ignore unknown upstream fields.
+
+   The shared ``TmdbModel`` base ignores additive upstream fields so unrelated
+   TMDB response changes do not break Cineara's integration.
+
+6. Keep derived Cineara semantics outside this module.
+
+   Normalized genres, country metadata, runtime formatting, certification, and
+   media classification belong in mapper, catalogue, or feature layers.
+
+7. Keep top-level movie details independent of subordinate endpoints.
+
+   Credits, images, videos, release dates, recommendations, watch providers,
+   external IDs, and other movie resources use their own raw response models.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
-# =============================================================================
-# Base model
-# =============================================================================
-
-
-class _TmdbMovieModel(BaseModel):
-    """Base configuration shared by raw TMDB movie models."""
-
-    model_config = ConfigDict(
-        extra="ignore",
-    )
-
-
-# =============================================================================
-# Genre
-# =============================================================================
-
-
-class TmdbGenre(_TmdbMovieModel):
-    """Raw TMDB genre object.
-
-    Example:
-
-        {
-            "id": 18,
-            "name": "Drama"
-        }
-    """
-
-    id: int
-    name: str
-
-
-# =============================================================================
-# Production country
-# =============================================================================
-
-
-class TmdbProductionCountry(_TmdbMovieModel):
-    """Raw TMDB production-country object.
-
-    Example:
-
-        {
-            "iso_3166_1": "JP",
-            "name": "Japan"
-        }
-
-    This is especially important for Cineara Search because movie Search
-    results do not provide the same production-country detail as the movie
-    details endpoint.
-    """
-
-    iso_3166_1: str
-    name: str
-
-
-# =============================================================================
-# Production company
-# =============================================================================
-
-
-class TmdbProductionCompany(_TmdbMovieModel):
-    """Raw TMDB production-company object."""
-
-    id: int
-    name: str
-
-    logo_path: str | None = None
-
-    origin_country: str = ""
-
-
-# =============================================================================
-# Spoken language
-# =============================================================================
-
-
-class TmdbSpokenLanguage(_TmdbMovieModel):
-    """Raw TMDB spoken-language object."""
-
-    iso_639_1: str
-
-    english_name: str = ""
-    name: str = ""
-
+from .common import (
+    TmdbGenre,
+    TmdbModel,
+    TmdbProductionCompany,
+    TmdbProductionCountry,
+    TmdbSpokenLanguage,
+)
 
 # =============================================================================
 # Collection summary
 # =============================================================================
 
 
-class TmdbMovieCollectionSummary(_TmdbMovieModel):
-    """Raw collection summary embedded in movie details.
+class TmdbMovieCollectionSummary(TmdbModel):
+    """Lightweight collection summary embedded in movie details.
 
-    This represents the lightweight ``belongs_to_collection`` object returned
-    by TMDB movie details.
+    TMDB exposes this structure through ``belongs_to_collection``.
 
-    Full collection information belongs to the dedicated TMDB collection
-    endpoint/model rather than this object.
+    It is distinct from the complete collection response returned by TMDB's
+    collection-details endpoint.
     """
 
-    id: int
+    id: int = Field(
+        gt=0,
+    )
+
     name: str
 
     poster_path: str | None = None
+
     backdrop_path: str | None = None
 
 
@@ -143,62 +105,64 @@ class TmdbMovieCollectionSummary(_TmdbMovieModel):
 # =============================================================================
 
 
-class TmdbMovieDetails(_TmdbMovieModel):
-    """Raw response from ``GET /movie/{movie_id}``.
+class TmdbMovieDetails(TmdbModel):
+    """Top-level raw response from ``GET /movie/{movie_id}``.
 
-    Required by Search enrichment
-    -----------------------------
+    The model contains only metadata returned directly by TMDB's movie-details
+    endpoint. It does not perform classification, URL construction, caching,
+    persistence, or additional TMDB requests.
 
-    Search currently depends on at least:
-
-        id
-        production_countries
-        original_language
-        genres
-        runtime
-        status
-
-    The remaining top-level fields are retained because this is the canonical
-    Cineara representation of the TMDB movie-details response and will later
-    be reused by movie-detail mapping.
+    Search must use TMDB Search response models rather than requesting movie
+    details for individual Search results.
     """
 
     # =========================================================================
     # Identity
     # =========================================================================
 
-    id: int
+    id: int = Field(
+        gt=0,
+    )
 
     # =========================================================================
     # Titles
     # =========================================================================
 
     title: str
+
     original_title: str
 
     # =========================================================================
-    # Language
+    # Language and origin
     # =========================================================================
 
     original_language: str | None = None
+
+    origin_country: list[str] = Field(
+        default_factory=list,
+    )
 
     # =========================================================================
     # Description
     # =========================================================================
 
     overview: str | None = None
+
     tagline: str | None = None
 
     # =========================================================================
     # Artwork
     # =========================================================================
     #
-    # These remain raw TMDB paths.
+    # Values remain raw TMDB paths such as:
     #
-    # Do not build final URLs inside this model.
+    #     /abc123.jpg
+    #
+    # URL construction belongs in ``image_url.py``.
     # =========================================================================
 
     poster_path: str | None = None
+
     backdrop_path: str | None = None
 
     # =========================================================================
@@ -221,9 +185,8 @@ class TmdbMovieDetails(_TmdbMovieModel):
     # Runtime
     # =========================================================================
     #
-    # Runtime is expressed by TMDB in minutes.
-    #
-    # It may be unavailable for incomplete/upcoming catalogue entries.
+    # TMDB expresses movie runtime in minutes. Zero is accepted because TMDB
+    # may use it when no meaningful runtime is available.
     # =========================================================================
 
     runtime: int | None = Field(
@@ -232,53 +195,33 @@ class TmdbMovieDetails(_TmdbMovieModel):
     )
 
     # =========================================================================
-    # Production countries
-    # =========================================================================
-    #
-    # Search enrichment primarily exists to obtain this field.
-    #
-    # Example:
-    #
-    #     [
-    #         TmdbProductionCountry(
-    #             iso_3166_1="JP",
-    #             name="Japan",
-    #         )
-    #     ]
-    #
-    # Search will later map this to:
-    #
-    #     country_codes = ["JP"]
-    # =========================================================================
-
-    production_countries: list[TmdbProductionCountry] = Field(
-        default_factory=list,
-    )
-
-    # =========================================================================
-    # Production companies
+    # Production metadata
     # =========================================================================
 
     production_companies: list[TmdbProductionCompany] = Field(
         default_factory=list,
     )
 
-    # =========================================================================
-    # Spoken languages
-    # =========================================================================
+    production_countries: list[TmdbProductionCountry] = Field(
+        default_factory=list,
+    )
 
     spoken_languages: list[TmdbSpokenLanguage] = Field(
         default_factory=list,
     )
 
     # =========================================================================
-    # Collection
+    # Collection relationship
     # =========================================================================
 
     belongs_to_collection: TmdbMovieCollectionSummary | None = None
 
     # =========================================================================
     # Financial metadata
+    # =========================================================================
+    #
+    # TMDB reports budget and revenue as whole currency units and commonly
+    # uses zero when the value is unavailable.
     # =========================================================================
 
     budget: int = Field(
@@ -296,6 +239,7 @@ class TmdbMovieDetails(_TmdbMovieModel):
     # =========================================================================
 
     homepage: str | None = None
+
     imdb_id: str | None = None
 
     # =========================================================================
@@ -303,6 +247,7 @@ class TmdbMovieDetails(_TmdbMovieModel):
     # =========================================================================
 
     adult: bool = False
+
     video: bool = False
 
     # =========================================================================
@@ -317,92 +262,3 @@ class TmdbMovieDetails(_TmdbMovieModel):
         default=0,
         ge=0,
     )
-
-    # =========================================================================
-    # Convenience helpers
-    # =========================================================================
-
-    @property
-    def production_country_codes(self) -> list[str]:
-        """Return normalized production-country codes.
-
-        This is a convenience for Cineara integration/mapping code.
-
-        Example
-        -------
-
-        Raw TMDB:
-
-            production_countries = [
-                {
-                    "iso_3166_1": "JP",
-                    "name": "Japan",
-                }
-            ]
-
-        Result:
-
-            ["JP"]
-
-        Invalid/blank codes are ignored and duplicates are removed while
-        preserving their original order.
-        """
-
-        result: list[str] = []
-        seen: set[str] = set()
-
-        for country in self.production_countries:
-            code = country.iso_3166_1.strip().upper()
-
-            if len(code) != 2:
-                continue
-
-            if code in seen:
-                continue
-
-            seen.add(code)
-            result.append(code)
-
-        return result
-
-    @property
-    def genre_ids(self) -> list[int]:
-        """Return TMDB genre IDs from the richer detail genre objects.
-
-        Search responses contain:
-
-            genre_ids = [16, 18]
-
-        while movie details contain:
-
-            genres = [
-                {"id": 16, "name": "Animation"},
-                {"id": 18, "name": "Drama"},
-            ]
-
-        This helper makes it straightforward to feed either representation
-        into Cineara's ``media_classification.py``.
-        """
-
-        return [genre.id for genre in self.genres]
-
-    @property
-    def genre_names(self) -> list[str]:
-        """Return genre names from the TMDB detail genre objects."""
-
-        return [genre.name for genre in self.genres if genre.name.strip()]
-
-
-# =============================================================================
-# Public exports
-# =============================================================================
-
-
-__all__ = [
-    "TmdbGenre",
-    "TmdbMovieCollectionSummary",
-    "TmdbMovieDetails",
-    "TmdbProductionCompany",
-    "TmdbProductionCountry",
-    "TmdbSpokenLanguage",
-]

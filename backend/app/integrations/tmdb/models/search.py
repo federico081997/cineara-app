@@ -1,192 +1,149 @@
-"""Raw TMDB Search response models.
+"""Raw response models for TMDB Search endpoints.
 
-These models represent data received directly from TMDB Search endpoints.
-
-They belong exclusively to the TMDB integration layer and must not be exposed
-directly to the Cineara Flutter application. Cineara-owned Search models should
-be produced by the backend Search mapping/orchestration layer.
+This module contains the Pydantic transport models used to deserialize data
+returned directly by TMDB Search APIs.
 
 Supported endpoints
 -------------------
+- ``GET /search/multi``
+- ``GET /search/movie``
+- ``GET /search/tv``
+- ``GET /search/person``
+- ``GET /search/collection``
+- ``GET /search/company``
+- ``GET /search/keyword``
 
-    GET /search/movie
-    GET /search/tv
-    GET /search/person
-    GET /search/multi
+The models in this module represent TMDB's Search payloads rather than
+Cineara's public Search API.
 
-Design principles
------------------
+They therefore contain only data supplied by TMDB Search responses and must
+not contain:
 
-1. Search models describe Search payloads only.
+- detail-endpoint metadata;
+- Cineara media classifications;
+- normalized genre models;
+- generated image URLs;
+- cache state;
+- persistence state;
+- presentation labels;
+- application-specific result types;
+- additional upstream enrichment.
 
-   Do not add richer detail-only fields such as:
+Raw TMDB Search data must be mapped into Cineara-owned Search schemas before it
+leaves the backend integration boundary.
 
-       TV ``type``
-       movie ``production_countries``
-       runtime
-       number_of_seasons
-
-   Those belong to ``movie.py`` / ``tv.py`` and are obtained only when
-   selective detail enrichment is required.
-
-2. Dates remain strings.
-
-   Search/list payloads can contain empty, missing, or incomplete date values.
-   Cineara derives years later in its mapping layer.
-
-3. Artwork remains as raw TMDB paths.
-
-   Final image URLs are built by ``image_url.py``.
-
-4. ``media_type`` is normalized onto all three result models.
-
-   ``/search/multi`` supplies this discriminator. Dedicated endpoints do not
-   need to supply it, so Cineara gives each model its natural default.
-
-5. Unknown upstream fields are ignored.
-
-   TMDB can add unrelated response fields without breaking Cineara.
-
-6. TV ``origin_country`` is factual Search metadata.
-
-   It may safely contribute to:
-
-       country display
-       high-confidence Anime detection
-       selective regional-drama enrichment candidate detection
-
-   It is NOT sufficient by itself to classify a result as K-Drama, J-Drama,
-   C-Drama, etc. Those labels require richer TV-detail metadata.
-
-7. Search pagination is generic.
-
-8. Person ``known_for`` entries remain strongly typed.
-
-Selective enrichment
---------------------
-These models intentionally do not know whether a result should be enriched.
-That decision belongs to Cineara's Search/classification orchestration.
-
-Examples:
-
-    Japanese-language animated movie with missing production countries
-        -> Search model remains unchanged
-        -> classifier may mark NEEDS_ENRICHMENT
-        -> movie details can be fetched/cache-reused
-
-    Japanese Drama TV Search result without TV ``type``
-        -> Search model remains unchanged
-        -> classifier may mark NEEDS_ENRICHMENT
-        -> TV details can be fetched/cache-reused
+Shared TMDB transport infrastructure, including the base ``TmdbModel`` and
+generic ``TmdbPage`` envelope, is defined in ``common.py``.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, TypeVar
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
-# =============================================================================
-# Base model
-# =============================================================================
-
-
-class _TmdbSearchModel(BaseModel):
-    """Base configuration shared by raw TMDB Search models."""
-
-    model_config = ConfigDict(
-        # TMDB may add fields without requiring an immediate Cineara release.
-        extra="ignore",
-    )
-
+from .common import TmdbModel
 
 # =============================================================================
-# Movie Search result
+# Movie Search
 # =============================================================================
 
 
-class TmdbMovieSearchResult(_TmdbSearchModel):
-    """Raw TMDB movie Search result.
+class TmdbMovieSearchResult(TmdbModel):
+    """Movie returned by a TMDB Search response.
 
     Used by:
 
-        GET /search/movie
+    - ``GET /search/movie``;
+    - movie entries from ``GET /search/multi``;
+    - movie entries contained in a person's ``known_for`` collection.
 
-    and movie entries returned by:
+    Dedicated Movie Search results do not require ``media_type`` in their
+    payload, while Multi Search and ``known_for`` entries use it as a
+    discriminator. Providing the correct TMDB value as a default allows the
+    same raw model to represent all of these payload shapes.
 
-        GET /search/multi
-        person.known_for
-
-    Movie Search does not contain the richer production-country data used by
-    Cineara for high-confidence Anime classification. That data belongs to
-    ``TmdbMovieDetails`` and can be obtained through selective enrichment.
+    Only Search-level metadata belongs here. Movie-detail metadata such as
+    runtime, production countries, production companies, and collection
+    details is intentionally excluded.
     """
 
-    # -------------------------------------------------------------------------
-    # Multi-search discriminator
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Discriminator
+    # =========================================================================
 
     media_type: Literal["movie"] = "movie"
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Identity
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
-    id: int
+    id: int = Field(
+        gt=0,
+    )
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Titles
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     title: str
+
     original_title: str
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Language
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     original_language: str | None = None
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Description
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     overview: str = ""
 
-    # -------------------------------------------------------------------------
-    # Artwork
-    # -------------------------------------------------------------------------
-
-    poster_path: str | None = None
-    backdrop_path: str | None = None
-
-    # -------------------------------------------------------------------------
-    # Search-level classification metadata
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Genres
+    # =========================================================================
+    #
+    # These remain raw TMDB genre IDs. Translation into Cineara's canonical
+    # MediaGenre values belongs in the catalogue genre registry.
+    # =========================================================================
 
     genre_ids: list[int] = Field(
         default_factory=list,
     )
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Release metadata
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     release_date: str | None = None
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Artwork
+    # =========================================================================
+
+    poster_path: str | None = None
+
+    backdrop_path: str | None = None
+
+    # =========================================================================
     # Content flags
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     adult: bool = False
+
     video: bool = False
 
-    # -------------------------------------------------------------------------
-    # TMDB ranking/rating metadata
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # TMDB ranking / rating metadata
+    # =========================================================================
 
     popularity: float = 0.0
+
     vote_average: float = 0.0
+
     vote_count: int = Field(
         default=0,
         ge=0,
@@ -194,56 +151,54 @@ class TmdbMovieSearchResult(_TmdbSearchModel):
 
 
 # =============================================================================
-# TV Search result
+# TV Search
 # =============================================================================
 
 
-class TmdbTvSearchResult(_TmdbSearchModel):
-    """Raw TMDB television Search result.
+class TmdbTvSearchResult(TmdbModel):
+    """TV series returned by a TMDB Search response.
 
     Used by:
 
-        GET /search/tv
+    - ``GET /search/tv``;
+    - TV entries from ``GET /search/multi``;
+    - TV entries contained in a person's ``known_for`` collection.
 
-    and TV entries returned by:
+    TV Search directly provides lightweight origin and language metadata in
+    addition to genre IDs. These values remain raw integration data and are
+    interpreted only after crossing into Cineara's catalogue or Search mapper
+    layer.
 
-        GET /search/multi
-        person.known_for
-
-    ``origin_country`` is useful for country display, Anime classification,
-    and detecting whether a result is worth selectively enriching.
-
-    Regional-drama classifications are deliberately NOT inferred from country
-    alone. Cineara requires richer TV-detail metadata such as ``type`` before
-    applying K-Drama, J-Drama, C-Drama, etc.
-
-    Likewise, this Search model does not contain enough information to decide
-    reliably whether a TV item is a Series or Miniseries. That structural
-    distinction belongs to ``TmdbTvDetails``.
+    Detail-only metadata such as networks, seasons, episode counts,
+    production companies, and the TV Details ``type`` field does not belong
+    in this model.
     """
 
-    # -------------------------------------------------------------------------
-    # Multi-search discriminator
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Discriminator
+    # =========================================================================
 
     media_type: Literal["tv"] = "tv"
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Identity
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
-    id: int
+    id: int = Field(
+        gt=0,
+    )
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Names
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     name: str
+
     original_name: str
 
-    # -------------------------------------------------------------------------
-    # Language/origin
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Language and origin
+    # =========================================================================
 
     original_language: str | None = None
 
@@ -251,45 +206,52 @@ class TmdbTvSearchResult(_TmdbSearchModel):
         default_factory=list,
     )
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Description
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     overview: str = ""
 
-    # -------------------------------------------------------------------------
-    # Artwork
-    # -------------------------------------------------------------------------
-
-    poster_path: str | None = None
-    backdrop_path: str | None = None
-
-    # -------------------------------------------------------------------------
-    # Search-level classification metadata
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Genres
+    # =========================================================================
+    #
+    # These remain raw TMDB TV genre IDs. Translation into canonical Cineara
+    # genres belongs in ``catalogue/genre_registry.py``.
+    # =========================================================================
 
     genre_ids: list[int] = Field(
         default_factory=list,
     )
 
-    # -------------------------------------------------------------------------
-    # Air-date metadata
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Airing metadata
+    # =========================================================================
 
     first_air_date: str | None = None
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Artwork
+    # =========================================================================
+
+    poster_path: str | None = None
+
+    backdrop_path: str | None = None
+
+    # =========================================================================
     # Content flags
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     adult: bool = False
 
-    # -------------------------------------------------------------------------
-    # TMDB ranking/rating metadata
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # TMDB ranking / rating metadata
+    # =========================================================================
 
     popularity: float = 0.0
+
     vote_average: float = 0.0
+
     vote_count: int = Field(
         default=0,
         ge=0,
@@ -301,162 +263,236 @@ class TmdbTvSearchResult(_TmdbSearchModel):
 # =============================================================================
 
 
-type _TmdbKnownForResult = Annotated[
+type TmdbKnownForResult = Annotated[
     TmdbMovieSearchResult | TmdbTvSearchResult,
     Field(
         discriminator="media_type",
     ),
 ]
+"""Movie or TV result embedded in a person's ``known_for`` collection.
+
+TMDB includes these lightweight media records directly in Person Search
+responses. Retaining the raw entries allows higher layers to use the metadata
+without performing additional TMDB requests.
+
+Only Movie and TV Search results are valid members of this union.
+"""
 
 
 # =============================================================================
-# Person Search result
+# Person Search
 # =============================================================================
 
 
-class TmdbPersonSearchResult(_TmdbSearchModel):
-    """Raw TMDB person Search result.
+class TmdbPersonSearchResult(TmdbModel):
+    """Person returned by a TMDB Search response.
 
     Used by:
 
-        GET /search/person
+    - ``GET /search/person``;
+    - person entries from ``GET /search/multi``.
 
-    and person entries returned by:
-
-        GET /search/multi
+    The ``known_for`` collection is retained because it is part of the Search
+    response itself and therefore does not require additional upstream
+    requests.
     """
 
-    # -------------------------------------------------------------------------
-    # Multi-search discriminator
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Discriminator
+    # =========================================================================
 
     media_type: Literal["person"] = "person"
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Identity
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
-    id: int
+    id: int = Field(
+        gt=0,
+    )
 
-    # -------------------------------------------------------------------------
-    # Name
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Names
+    # =========================================================================
 
     name: str
 
-    # TMDB commonly supplies this for person Search results. Keeping it
-    # nullable makes parsing resilient to incomplete/older payloads.
     original_name: str | None = None
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Professional metadata
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     known_for_department: str | None = None
 
-    # Keep the raw numeric TMDB representation at the integration boundary.
+    # TMDB represents gender using an integer value. Interpretation belongs
+    # outside the raw transport layer.
     gender: int | None = None
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Artwork
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     profile_path: str | None = None
 
-    # -------------------------------------------------------------------------
-    # Known-for titles
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Known-for media
+    # =========================================================================
 
-    known_for: list[_TmdbKnownForResult] = Field(
+    known_for: list[TmdbKnownForResult] = Field(
         default_factory=list,
     )
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Content flags
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     adult: bool = False
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # TMDB ranking metadata
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     popularity: float = 0.0
 
 
 # =============================================================================
-# Multi-search result
+# Collection Search
+# =============================================================================
+
+
+class TmdbCollectionSearchResult(TmdbModel):
+    """Movie collection returned by ``GET /search/collection``.
+
+    This model represents the lightweight collection metadata returned by
+    TMDB Search. It is distinct from a complete TMDB collection-details
+    response.
+
+    A TMDB collection is a TMDB-specific movie grouping and should not be
+    interpreted as a broader application concept inside this transport model.
+    """
+
+    # =========================================================================
+    # Identity
+    # =========================================================================
+
+    id: int = Field(
+        gt=0,
+    )
+
+    # =========================================================================
+    # Names
+    # =========================================================================
+
+    name: str
+
+    original_name: str | None = None
+
+    # =========================================================================
+    # Language
+    # =========================================================================
+
+    original_language: str | None = None
+
+    # =========================================================================
+    # Description
+    # =========================================================================
+
+    overview: str = ""
+
+    # =========================================================================
+    # Artwork
+    # =========================================================================
+
+    poster_path: str | None = None
+
+    backdrop_path: str | None = None
+
+    # =========================================================================
+    # Content flags
+    # =========================================================================
+
+    adult: bool = False
+
+
+# =============================================================================
+# Company Search
+# =============================================================================
+
+
+class TmdbCompanySearchResult(TmdbModel):
+    """Production company returned by ``GET /search/company``.
+
+    TMDB Companies and TV Networks are distinct upstream resource types.
+    This model represents only TMDB Company Search results.
+    """
+
+    # =========================================================================
+    # Identity
+    # =========================================================================
+
+    id: int = Field(
+        gt=0,
+    )
+
+    # =========================================================================
+    # Name
+    # =========================================================================
+
+    name: str
+
+    # =========================================================================
+    # Artwork
+    # =========================================================================
+
+    logo_path: str | None = None
+
+    # =========================================================================
+    # Origin
+    # =========================================================================
+
+    # TMDB may use an empty string when no origin country is available.
+    origin_country: str = ""
+
+
+# =============================================================================
+# Keyword Search
+# =============================================================================
+
+
+class TmdbKeywordSearchResult(TmdbModel):
+    """Keyword returned by ``GET /search/keyword``.
+
+    ``Keyword`` remains the correct TMDB integration concept. Any
+    application-facing terminology is defined outside this transport layer.
+    """
+
+    id: int = Field(
+        gt=0,
+    )
+
+    name: str
+
+
+# =============================================================================
+# Multi Search
 # =============================================================================
 
 
 type TmdbMultiSearchResult = Annotated[
-    TmdbMovieSearchResult | TmdbTvSearchResult | TmdbPersonSearchResult,
+    (TmdbMovieSearchResult | TmdbTvSearchResult | TmdbPersonSearchResult),
     Field(
         discriminator="media_type",
     ),
 ]
+"""Result returned by ``GET /search/multi``.
 
-# =============================================================================
-# Generic paginated Search response
-# =============================================================================
+TMDB Multi Search contains three result families:
 
+- Movie;
+- TV;
+- Person.
 
-SearchResultT = TypeVar(
-    "SearchResultT",
-    bound=BaseModel,
-)
-
-
-class TmdbSearchPage[SearchResultT](
-    _TmdbSearchModel,
-):
-    """Generic raw TMDB paginated Search response.
-
-    Examples
-    --------
-    Movie Search:
-
-        TmdbSearchPage[TmdbMovieSearchResult]
-
-    TV Search:
-
-        TmdbSearchPage[TmdbTvSearchResult]
-
-    Person Search:
-
-        TmdbSearchPage[TmdbPersonSearchResult]
-
-    Multi Search:
-
-        TmdbSearchPage[TmdbMultiSearchResult]
-    """
-
-    page: int = Field(
-        ge=0,
-    )
-
-    results: list[SearchResultT] = Field(
-        default_factory=list,
-    )
-
-    total_pages: int = Field(
-        ge=0,
-    )
-
-    total_results: int = Field(
-        ge=0,
-    )
-
-
-# =============================================================================
-# Public exports
-# =============================================================================
-
-
-__all__ = [
-    "TmdbMovieSearchResult",
-    "TmdbMultiSearchResult",
-    "TmdbPersonSearchResult",
-    "TmdbSearchPage",
-    "TmdbTvSearchResult",
-]
+Collections, companies, and keywords are not members of the Multi Search
+response and are therefore intentionally excluded from this union.
+"""
