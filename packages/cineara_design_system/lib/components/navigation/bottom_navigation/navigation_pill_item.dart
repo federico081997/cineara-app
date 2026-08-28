@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../tokens/accessibility.dart';
+import '../../../tokens/geometry.dart';
 import '../../../tokens/motion.dart';
-import '../../../tokens/radius.dart';
 import '../../interactions/press_scale.dart';
 import 'navigation_destination.dart';
 import 'navigation_pill_metrics.dart';
@@ -13,8 +13,14 @@ import 'navigation_pill_style.dart';
 /// The bottom navigation is visually icon-only. Destination labels remain
 /// available through tooltips and accessibility semantics.
 ///
-/// The parent pill owns the moving selection capsule so one shared highlight
-/// can animate continuously between destinations.
+/// The parent navigation surface owns the moving selection capsule so one
+/// shared highlight can animate continuously between destinations.
+///
+/// The interactive region intentionally follows the soft capsule geometry of
+/// the moving selection indicator rather than the chamfered geometry of the
+/// outer Cineara navigation surface. This keeps destination interactions
+/// visually familiar while the surrounding frame carries the stronger Cineara
+/// identity.
 final class CinearaNavigationPillItem extends StatefulWidget {
   const CinearaNavigationPillItem({
     required this.destination,
@@ -23,8 +29,13 @@ final class CinearaNavigationPillItem extends StatefulWidget {
     super.key,
   });
 
+  /// Destination represented by this item.
   final CinearaNavigationDestination destination;
+
+  /// Whether this destination is currently selected.
   final bool selected;
+
+  /// Called when the destination is activated.
   final VoidCallback onPressed;
 
   @override
@@ -68,14 +79,26 @@ final class _CinearaNavigationPillItemState
       selected: widget.selected,
     );
 
+    final interactionRadius = BorderRadius.circular(
+      CinearaGeometry.capsuleRadius,
+    );
+
     final visual = InkWell(
       onTap: widget.onPressed,
       onHighlightChanged: _handleHighlightChanged,
       enableFeedback: true,
       excludeFromSemantics: true,
+
+      // The moving indicator already provides the primary selection animation.
+      // Disabling the default Material splash avoids competing visual effects.
       splashFactory: NoSplash.splashFactory,
       overlayColor: CinearaNavigationPillStyle.itemOverlay(context),
-      borderRadius: BorderRadius.circular(CinearaRadii.pill),
+
+      // Individual destinations retain capsule interaction geometry even
+      // though the surrounding navigation container uses Cineara's chamfered
+      // frame.
+      borderRadius: interactionRadius,
+
       child: CinearaPressScale(
         pressed: _pressed,
         child: Center(
