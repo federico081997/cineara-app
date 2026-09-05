@@ -26,6 +26,9 @@ abstract final class CinearaMotion {
   /// Duration for larger or more prominent transitions.
   static const Duration slow = Duration(milliseconds: 420);
 
+  /// Duration for slower transitions as required.
+  static const Duration verySlow = Duration(milliseconds: 840);
+
   /// Scale applied to standard interactive surfaces while pressed.
   static const double pressedScale = 0.985;
 

@@ -124,19 +124,31 @@ abstract final class CinearaFeedbackColours {
 
 /// Stable accent colours representing media tracking states.
 abstract final class CinearaStatusColours {
-  static const Color watching = CinearaColours.blue500;
-  static const Color caughtUp = CinearaColours.green500;
-  static const Color completed = CinearaColours.green700;
-  static const Color rewatching = CinearaColours.brand500;
-  static const Color onHold = CinearaColours.amber500;
-  static const Color dropped = CinearaColours.red500;
-  static const Color watchlist = CinearaColours.blue600;
-  static const Color favourite = CinearaColours.pink500;
-  static const Color collection = CinearaColours.teal500;
+  static const Color statusWatching = CinearaColours.blue500;
+  static const Color statusCaughtUp = CinearaColours.green500;
+  static const Color statusCompleted = CinearaColours.green700;
+  static const Color statusRewatching = CinearaColours.brand500;
+  static const Color statusOnHold = CinearaColours.amber500;
+  static const Color statusDropped = CinearaColours.red500;
+  static const Color watchlist = Color(0xFF3EAFCB);
+  static const Color favourite = Color(0xFFE65D78);
+  static const Color collection = Color(0xFF9569EB);
+  static const Color rating = Color(0xFFE2A638);
 }
 
 /// Colours used by rating indicators.
 abstract final class CinearaRatingColours {
   static const Color user = CinearaColours.amber500;
   static const Color external = CinearaColours.blue500;
+}
+
+/// Colour utilities used by the Cineara design system.
+abstract final class CinearaColourUtils {
+  /// Returns a readable foreground colour for content displayed over
+  /// [background].
+  static Color foregroundFor(Color background) {
+    return background.computeLuminance() >= 0.47
+        ? CinearaColours.neutral950
+        : CinearaColours.neutral0;
+  }
 }
