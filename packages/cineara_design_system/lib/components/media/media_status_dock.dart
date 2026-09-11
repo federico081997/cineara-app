@@ -32,20 +32,38 @@ enum CinearaStatusDockVariant {
 
 /// Presentation behaviour used by [CinearaStatusDock].
 enum CinearaStatusDockMode {
-  /// All currently active, enabled indicators remain visible.
+  /// All currently active, enabled indicators remain fully visible.
   permanent,
 
-  /// Only the first active, enabled indicator remains visible at rest.
+  /// Shows one full-size anchor plus one smaller semantic satellite at rest.
   ///
-  /// The complete chain can temporarily unfold and then collapse back into
-  /// that first visible indicator.
+  /// The same compact visual language is used on both axes.
+  ///
+  /// Horizontal/List mode keeps the satellite in the same perched position as
+  /// the ordinary compact dock at rest: above and partially overlapping the
+  /// anchor. On reveal it drops to the common bottom baseline, becomes a
+  /// full-size second node, then the chain continues horizontally.
   compact,
 }
 
+/// Axis used to compose active personal-state indicators.
+enum CinearaStatusDockLayout {
+  /// Vertical chain designed primarily for poster overlays.
+  vertical,
+
+  /// Horizontal chain designed for list rows and other wide layouts.
+  ///
+  /// The anchor stays fixed at [CinearaStatusDock.side].
+  ///
+  /// In Compact mode, entry 1 rests above the anchor as the same real-state
+  /// satellite used by the vertical presentation. It then drops onto the
+  /// baseline and the full chain expands horizontally away from the anchor.
+  /// With [CinearaStatusDockSide.start] this grows toward logical end (right in
+  /// LTR), which is the intended Search/List configuration.
+  horizontal,
+}
+
 /// Logical side to which the dock is visually anchored.
-///
-/// This controls the internal alignment of nodes. Actual placement within a
-/// poster or list row remains the responsibility of the parent.
 enum CinearaStatusDockSide { start, end }
 
 /// Localized accessibility labels used by [CinearaStatusDock].
@@ -59,19 +77,10 @@ final class CinearaStatusDockLabels {
     required this.personalRating,
   });
 
-  /// Accessibility label for the complete personal-state dock.
   final String dock;
-
-  /// Localized Favorite label.
   final String favorite;
-
-  /// Localized Collection label.
   final String collection;
-
-  /// Localized Watchlist label.
   final String watchlist;
-
-  /// Localized personal-rating label.
   final String personalRating;
 }
 
@@ -83,96 +92,20 @@ final class CinearaStatusDockLabels {
 ///
 /// Application state remains outside the design-system component.
 ///
-/// Two controller operations intentionally have different semantics.
+/// [reveal] is presentation-only. Use it for explicit dock inspection and
+/// Settings previews.
 ///
-/// ## [reveal]
-///
-/// Explicitly reveals the complete current dock.
-///
-/// Use this when the user deliberately asks to inspect the dock, or when a
-/// presentation preview should show the effect of a configuration change.
-///
-/// Typical uses:
-///
-/// ```text
-/// user taps compact dock
-///     ↓
-/// controller.reveal()
-///
-/// settings preference changes
-///     ↓
-/// preview rebuilds
-///     ↓
-/// controller.reveal()
-/// ```
-///
-/// ## [revealChanges]
-///
-/// Reacts to an actual media-state mutation.
-///
-/// Typical use:
-///
-/// ```text
-/// long press card
-///     ↓
-/// quick-actions surface
-///     ↓
-/// user changes personal state
-///     ↓
-/// surface closes
-///     ↓
-/// application state updates
-///     ↓
-/// controller.revealChanges(...)
-/// ```
-///
-/// State-change choreography:
-///
-/// ```text
-/// added state
-/// → reveal stack
-/// → magnetic attachment
-/// → rail pulse
-///
-/// removed state while collapsed
-/// → remain collapsed
-///
-/// removed state while fully open
-/// → show updated configuration briefly
-/// → collapse
-///
-/// removed state while opening/collapsing
-/// → immediately continue toward collapsed
-///
-/// existing rating changed
-/// → animate rating number only
-/// ```
-///
-/// A controller should normally belong to one media-card instance.
+/// [revealChanges] reacts to actual media-state mutations after the parent has
+/// rebuilt with the final state and is visible again.
 final class CinearaStatusDockController {
   _CinearaStatusDockState? _state;
 
-  /// Whether this controller is currently attached to a mounted dock.
   bool get attached => _state != null;
 
-  /// Explicitly reveals the complete current dock.
-  ///
-  /// In [CinearaStatusDockMode.compact], the chain unfolds from the current
-  /// compact anchor and automatically collapses again when auto-collapse is
-  /// enabled.
-  ///
-  /// In permanent mode the complete chain is already visible.
   Future<void> reveal() async {
     await _state?._revealFromController();
   }
 
-  /// Plays presentation feedback for application state that just changed.
-  ///
-  /// Call this only once the corresponding card/poster is visible again, for
-  /// example after a quick-actions sheet has closed.
-  ///
-  /// [changedIndicators] must describe what actually changed, rather than all
-  /// indicators that are currently active.
   Future<void> revealChanges({
     required Set<CinearaStatusDockIndicator> changedIndicators,
   }) async {
@@ -185,9 +118,6 @@ final class CinearaStatusDockController {
     );
   }
 
-  /// Collapses a temporarily expanded compact dock immediately.
-  ///
-  /// Permanent docks remain expanded.
   Future<void> collapse() async {
     await _state?._collapseFromController();
   }
@@ -197,7 +127,6 @@ final class CinearaStatusDockController {
       _state == null || identical(_state, state),
       'A CinearaStatusDockController can only control one mounted dock.',
     );
-
     _state = state;
   }
 
@@ -214,53 +143,9 @@ final class CinearaStatusDockController {
 
 /// Personal-state indicator attached to a Cineara media presentation.
 ///
-/// The dock represents:
+/// The dock represents Favorite, Collection, Watchlist, and personal Rating.
 ///
-/// - Favorite
-/// - Collection
-/// - Watchlist
-/// - Personal rating
-///
-/// It does not represent lifecycle/viewing state such as Watching, Completed,
-/// Rewatching, On hold, or Dropped.
-///
-/// ## Visibility
-///
-/// [visibleIndicators] controls which categories are eligible to appear.
-///
-/// Visibility is presentation-only:
-///
-/// ```text
-/// collection == true
-/// +
-/// collection omitted from visibleIndicators
-///
-/// => collection remains true in application state
-/// => collection simply does not appear in the dock
-/// ```
-///
-/// Only active indicators are rendered.
-///
-/// An entirely empty dock renders [SizedBox.shrink].
-///
-/// ## Canonical order
-///
-/// The dock is ordered from bottom to top:
-///
-/// ```text
-/// Collection
-///     │
-/// Favorite
-///     │
-/// Watchlist
-///     │
-/// ★ Rating
-/// ```
-///
-/// Rating therefore occupies the bottom position whenever it is active and
-/// enabled for display.
-///
-/// The compact-anchor fallback priority is:
+/// Active visible entries use one canonical bottom-to-top hierarchy:
 ///
 /// ```text
 /// Rating
@@ -269,151 +154,110 @@ final class CinearaStatusDockController {
 /// → Collection
 /// ```
 ///
-/// ## Permanent mode
+/// In compact rest:
 ///
-/// Every active visible indicator remains present.
+/// - entry 0 is the full-size anchor;
+/// - entry 1 is the smaller satellite;
+/// - entry 2+ are hidden.
 ///
-/// ## Compact mode
+/// The compact satellite intentionally overlaps the anchor at rest. This is the
+/// **only** intentional badge overlap in the component.
 ///
-/// The first active visible indicator becomes the compact anchor.
+/// ## Motion invariant
 ///
-/// With all indicators active:
+/// Full-size nodes never pass through or overlap one another. Structural
+/// mutations always create a vacant slot before another node enters it.
 ///
-/// ```text
-/// collapsed:
+/// ## Compact reveal
 ///
-/// ★ 8.5
+/// The satellite separates into its full chain slot first. Hidden active nodes
+/// then magnetically attach into their own already-vacant full-size slots.
 ///
-/// expanded:
+/// Collapse is the reverse: hidden presentation nodes magnetically retract
+/// first, then the satellite settles back onto the anchor.
 ///
-/// Collection
-///     │
-/// Favorite
-///     │
-/// Watchlist
-///     │
-/// ★ 8.5       ← stable anchor
-/// ```
+/// ## Real additions
 ///
-/// During collapse, every non-anchor node returns into the current anchor.
-///
-/// ## Interaction
-///
-/// Permanent mode is presentation-only and lets pointer input pass to the
-/// containing media card.
-///
-/// Compact mode can intercept a tap when multiple indicators exist:
+/// Every visible real addition uses the same choreography:
 ///
 /// ```text
-/// tap dock
-/// → explicitly reveal chain
+/// compact
+/// → expand the hierarchy
+/// → immediately begin the structural mutation
+/// → reflow retained nodes to create the new vacant slot
+/// → magnetically attach the new full-size node
+/// → pulse
 /// → hold
-/// → collapse automatically
+/// → collapse using the NEW hierarchy
 /// ```
 ///
-/// Card-level editing should still be handled by the parent:
+/// Permanent mode performs the same reflow + magnetic attachment but remains
+/// expanded.
+///
+/// ## Real removals
+///
+/// Every structural removal is shown explicitly.
+///
+/// In Compact mode the OLD hierarchy expands first, even when the removed state
+/// was the resting satellite or a normally hidden state:
 ///
 /// ```text
-/// tap card
-/// → details
-///
-/// long press card
-/// → media actions
+/// compact hierarchy
+/// → expand hierarchy
+/// → immediately begin the structural mutation
+/// → magnetically detach the removed full-size node
+/// → leave a vacant slot
+/// → reflow retained nodes
+/// → short confirmation hold
+/// → collapse using the NEW hierarchy
 /// ```
 ///
-/// A larger poster-corner interaction region can be provided by the parent
-/// overlay while setting [tapToExpand] to false and invoking
-/// [CinearaStatusDockController.reveal] from that parent region.
+/// This means the compact satellite never silently swaps to another state after
+/// a real removal. Any new satellite appears only as the natural result of the
+/// final collapse.
 ///
-/// ## Real state-change animation
+/// Permanent mode uses the same magnetic detach + vacancy + reflow language but
+/// stays expanded.
 ///
-/// The full change animation is intentionally not started automatically from
-/// [State.didUpdateWidget].
+/// The single-node case cannot reveal a longer chain, so the node simply
+/// magnetically detaches from its existing full-size slot.
 ///
-/// Instead, after external state has changed and the poster is visible again,
-/// invoke:
+/// ## Rating changes
+///
+/// Existing numerical Rating changes animate only the number. `null → value`
+/// and `value → null` are structural addition/removal transitions.
+///
+/// ## Search/List presentation
+///
+/// For Search list rows, prefer:
 ///
 /// ```dart
-/// controller.revealChanges(
-///   changedIndicators: changed,
-/// );
+/// CinearaStatusDock(
+///   labels: labels,
+///   favorite: favorite,
+///   collection: collection,
+///   watchlist: watchlist,
+///   personalRating: personalRating,
+///   mode: CinearaStatusDockMode.compact,
+///   layout: CinearaStatusDockLayout.horizontal,
+///   variant: CinearaStatusDockVariant.surface,
+///   density: CinearaStatusDockDensity.compact,
+///   side: CinearaStatusDockSide.start,
+/// )
 /// ```
 ///
-/// Automatic state-change choreography follows these rules:
+/// Compact horizontal rest uses the same anchor + real-state satellite as the
+/// vertical dock, rotated onto the inline axis. With `side: start`, the chain
+/// expands toward logical end (left-to-right in LTR and right-to-left in RTL).
 ///
-/// ```text
-/// add Favorite / Collection / Watchlist
-/// → reveal stack
-/// → magnetically attach new node
-/// → rail pulse
+/// Permanent mode keeps the complete horizontal chain visible. Compact mode
+/// reveals the complete chain on tap and may auto-collapse back to the
+/// anchor + satellite presentation.
 ///
-/// add Rating: null → value
-/// → reveal stack
-/// → magnetically attach Rating
-/// → rail pulse
+/// ## Settings previews
 ///
-/// remove state while collapsed
-/// → remain collapsed
-///
-/// remove state while fully expanded
-/// → show updated configuration briefly
-/// → collapse
-///
-/// remove state while opening or collapsing
-/// → do not freeze the partial geometry
-/// → immediately continue toward collapsed
-///
-/// change Rating: value → value while collapsed
-/// → remain collapsed
-/// → animate number toward target
-///
-/// change Rating while fully expanded
-/// → animate number
-/// → short hold
-/// → collapse
-///
-/// change Rating while opening/collapsing
-/// → animate number while continuing toward collapsed
-/// ```
-///
-/// When an existing rating changes, the numerical animation decelerates toward
-/// the final value.
-///
-/// ```text
-/// 7.2 → 7.8 → 8.3 → 8.7 → 8.9 → 9
-/// ```
-///
-/// A numerical rating change does not replay the badge's magnetic attachment.
-///
-/// ```text
-/// null → 8.5
-/// ```
-///
-/// remains a newly attached Rating indicator.
-///
-/// ```text
-/// 8.5 → null
-/// ```
-///
-/// removes the Rating indicator without counting down to zero.
-///
-/// ## Presentation previews
-///
-/// A settings/configuration preview should not call [revealChanges], because a
-/// display preference is not a mutation of the media's personal state.
-///
-/// Instead:
-///
-/// ```text
-/// update display preference
-///     ↓
-/// rebuild preview
-///     ↓
-/// controller.reveal()
-/// ```
-///
-/// This lets the preview deliberately show the resulting dock configuration
-/// without pretending that Favorite, Collection, Watchlist, or Rating changed.
+/// Settings are presentation changes rather than media-state mutations. Rebuild
+/// the preview, wait for the end of frame, then call [CinearaStatusDockController.reveal].
 final class CinearaStatusDock extends StatefulWidget {
   const CinearaStatusDock({
     required this.labels,
@@ -434,6 +278,7 @@ final class CinearaStatusDock extends StatefulWidget {
     this.mode = CinearaStatusDockMode.permanent,
     this.variant = CinearaStatusDockVariant.artwork,
     this.density = CinearaStatusDockDensity.compact,
+    this.layout = CinearaStatusDockLayout.vertical,
     this.side = CinearaStatusDockSide.end,
     this.tapToExpand = true,
     this.autoCollapse = true,
@@ -453,91 +298,43 @@ final class CinearaStatusDock extends StatefulWidget {
          'personalRating must be between zero and ratingMax.',
        );
 
-  /// Optional presentation controller.
   final CinearaStatusDockController? controller;
-
-  /// Localized accessibility strings.
   final CinearaStatusDockLabels labels;
 
-  /// Whether the title is marked as a favorite.
   final bool favorite;
-
-  /// Whether the title belongs to the user's collection.
   final bool collection;
-
-  /// Whether the title belongs to the user's watchlist.
   final bool watchlist;
 
-  /// Current personal rating.
-  ///
-  /// A non-null value represents an active Rating indicator, including zero.
   final double? personalRating;
-
-  /// Optional already-formatted final rating value.
-  ///
-  /// Use this for locale-aware decimal formatting.
-  ///
-  /// During an active numerical transition, intermediate values use the
-  /// component's internal one-decimal formatter. Once the transition finishes,
-  /// this explicit final label is restored.
   final String? personalRatingLabel;
-
-  /// Maximum valid personal rating.
   final double ratingMax;
 
-  /// Indicators the user has chosen to display.
-  ///
-  /// This never modifies actual media state.
   final Set<CinearaStatusDockIndicator> visibleIndicators;
 
-  /// Permanent or compact presentation.
   final CinearaStatusDockMode mode;
-
-  /// Artwork or ordinary-surface treatment.
   final CinearaStatusDockVariant variant;
-
-  /// Physical visual density.
   final CinearaStatusDockDensity density;
 
-  /// Logical card edge to which the dock is aligned.
+  /// Composition axis.
+  ///
+  /// Keep [CinearaStatusDockLayout.vertical] for poster overlays.
+  /// Use [CinearaStatusDockLayout.horizontal] for Search/List rows.
+  final CinearaStatusDockLayout layout;
+
   final CinearaStatusDockSide side;
 
-  /// Whether the dock itself handles tap-to-reveal in compact mode.
-  ///
-  /// Set this to false when the parent poster overlay provides a larger
-  /// interaction region and calls [CinearaStatusDockController.reveal].
   final bool tapToExpand;
-
-  /// Whether a temporarily expanded compact dock collapses automatically.
   final bool autoCollapse;
-
-  /// Time the fully revealed compact dock remains visible before collapsing.
   final Duration autoCollapseDelay;
-
-  /// Whether decorative animation is enabled.
-  ///
-  /// System reduced-motion preferences always take precedence.
   final bool animate;
 
-  /// Optional Favorite semantic-colour override.
   final Color? favoriteAccent;
-
-  /// Optional Collection semantic-colour override.
   final Color? collectionAccent;
-
-  /// Optional Watchlist semantic-colour override.
   final Color? watchlistAccent;
-
-  /// Optional personal-rating semantic-colour override.
   final Color? ratingAccent;
 
-  /// Optional accessibility label override.
   final String? semanticLabel;
-
-  /// Optional accessibility value override.
   final String? semanticValue;
-
-  /// Whether the dock should be removed from the semantics tree.
   final bool excludeFromSemantics;
 
   @override
@@ -550,69 +347,40 @@ final class CinearaStatusDock extends StatefulWidget {
 
 final class _CinearaStatusDockState extends State<CinearaStatusDock>
     with TickerProviderStateMixin {
-  // ---------------------------------------------------------------------------
-  // Timing
-  // ---------------------------------------------------------------------------
-
-  /// Brief hold after a change to a dock that was already fully expanded.
-  ///
-  /// A partially expanded/collapsing dock never receives this delay because
-  /// freezing intermediate geometry would make nodes overlap visually.
   static const Duration _inheritedOpenCollapseDelay = Duration(
     milliseconds: 700,
   );
 
-  // ---------------------------------------------------------------------------
-  // Controllers
-  // ---------------------------------------------------------------------------
+  /// How long a completed removal remains visible before Compact collapses.
+  ///
+  /// Additions keep using [CinearaStatusDock.autoCollapseDelay], because their
+  /// celebratory pulse benefits from a longer hold.
+  static const Duration _removalConfirmationDelay = Duration(milliseconds: 850);
 
   late final AnimationController _expansionController;
-  late final AnimationController _attachmentController;
+  late final AnimationController _mutationController;
   late final AnimationController _pulseController;
   late final AnimationController _settleController;
   late final AnimationController _ratingController;
 
-  // ---------------------------------------------------------------------------
-  // Accessibility / motion
-  // ---------------------------------------------------------------------------
-
   bool _reduceMotion = false;
 
-  // ---------------------------------------------------------------------------
-  // Current explicit reaction
-  // ---------------------------------------------------------------------------
+  double? _ratingAnimationFrom;
+  double? _ratingAnimationTo;
+  bool _ratingAnimationActive = false;
 
-  Set<CinearaStatusDockIndicator> _reactingIndicators =
-      const <CinearaStatusDockIndicator>{};
+  List<_StatusDockEntry>? _pendingStructureBefore;
+  List<_StatusDockEntry>? _pendingStructureAfter;
+
+  _DockMutationTransition? _activeExpandedMutation;
+
+  /// Keeps the pre-mutation hierarchy visible while Compact opens before the
+  /// real structural mutation is animated.
+  List<_StatusDockEntry>? _visualEntriesOverride;
 
   CinearaStatusDockIndicator? _pulseIndicator;
 
-  // ---------------------------------------------------------------------------
-  // Deferred numerical-rating transition
-  // ---------------------------------------------------------------------------
-
-  /// Numerical rating before the latest external application-state update.
-  double? _ratingAnimationFrom;
-
-  /// Numerical rating after the latest external application-state update.
-  double? _ratingAnimationTo;
-
-  /// Whether the rating node should currently render its interpolated value.
-  ///
-  /// Merely changing [widget.personalRating] does not activate this. The
-  /// animation is armed only when [CinearaStatusDockController.revealChanges]
-  /// explicitly begins the visible feedback sequence.
-  bool _ratingAnimationActive = false;
-
-  // ---------------------------------------------------------------------------
-  // Sequence invalidation
-  // ---------------------------------------------------------------------------
-
   int _sequenceGeneration = 0;
-
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
 
   @override
   void initState() {
@@ -625,14 +393,14 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
 
     _expansionController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 260),
-      reverseDuration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 340),
+      reverseDuration: const Duration(milliseconds: 360),
       value: widget.mode == CinearaStatusDockMode.permanent ? 1 : 0,
     );
 
-    _attachmentController = AnimationController(
+    _mutationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 340),
+      duration: const Duration(milliseconds: 520),
       value: 1,
     );
 
@@ -644,7 +412,7 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
 
     _settleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 180),
       value: 1,
     );
 
@@ -680,49 +448,44 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
       'autoCollapseDelay must not be negative.',
     );
 
-    // -------------------------------------------------------------------------
-    // Controller ownership
-    // -------------------------------------------------------------------------
-
     if (!identical(oldWidget.controller, widget.controller)) {
       oldWidget.controller?._detach(this);
-
       widget.controller?._attach(this);
     }
 
-    // -------------------------------------------------------------------------
-    // Mode changes
-    // -------------------------------------------------------------------------
+    final bool presentationStructureChanged =
+        oldWidget.mode != widget.mode ||
+        oldWidget.density != widget.density ||
+        oldWidget.layout != widget.layout ||
+        oldWidget.side != widget.side ||
+        !_sameIndicatorSet(
+          oldWidget.visibleIndicators,
+          widget.visibleIndicators,
+        );
 
-    if (oldWidget.mode != widget.mode) {
+    if (presentationStructureChanged) {
+      _discardPendingStructureChange();
+    }
+
+    if (!presentationStructureChanged &&
+        _mediaStructureChanged(oldWidget, widget)) {
+      _pendingStructureBefore ??= _entriesForWidget(oldWidget);
+      _pendingStructureAfter = _entriesForWidget(widget);
+    }
+
+    if (oldWidget.mode != widget.mode || oldWidget.layout != widget.layout) {
       _cancelCurrentSequence();
 
       _expansionController.value =
           widget.mode == CinearaStatusDockMode.permanent ? 1 : 0;
-
-      _settleController.value = 1;
     }
-
-    // -------------------------------------------------------------------------
-    // Motion changes
-    // -------------------------------------------------------------------------
 
     if (!widget.animate && oldWidget.animate) {
       _finishDecorativeAnimationsImmediately();
     }
 
-    // -------------------------------------------------------------------------
-    // Rating transition capture
-    // -------------------------------------------------------------------------
-
     if (oldWidget.personalRating != widget.personalRating) {
-      // Capture the transition but deliberately do not animate it here.
-      //
-      // The parent may still be displaying a quick-actions surface. The count
-      // animation should begin only after revealChanges() is explicitly called
-      // once the media presentation is visible again.
       _ratingAnimationFrom = oldWidget.personalRating;
-
       _ratingAnimationTo = widget.personalRating;
 
       _ratingController
@@ -738,7 +501,7 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     widget.controller?._detach(this);
 
     _expansionController.dispose();
-    _attachmentController.dispose();
+    _mutationController.dispose();
     _pulseController.dispose();
     _settleController.dispose();
     _ratingController.dispose();
@@ -746,92 +509,63 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     super.dispose();
   }
 
-  // ===========================================================================
-  // Derived state
-  // ===========================================================================
-
   bool get _animationsEnabled => widget.animate && !_reduceMotion;
 
-  /// Active visible entries in canonical bottom-to-top order.
-  ///
-  /// Because [entries.first] is also the compact anchor, this order naturally
-  /// implements:
-  ///
-  /// ```text
-  /// Rating
-  /// → Watchlist
-  /// → Favorite
-  /// → Collection
-  /// ```
-  List<_StatusDockEntry> get _activeEntries {
+  List<_StatusDockEntry> get _activeEntries => _entriesForWidget(widget);
+
+  List<_StatusDockEntry> _entriesForWidget(CinearaStatusDock source) {
     final List<_StatusDockEntry> entries = <_StatusDockEntry>[];
 
-    // -------------------------------------------------------------------------
-    // Rating — canonical bottom node
-    // -------------------------------------------------------------------------
-
-    if (widget.visibleIndicators.contains(CinearaStatusDockIndicator.rating) &&
-        widget.personalRating != null) {
+    if (source.visibleIndicators.contains(CinearaStatusDockIndicator.rating) &&
+        source.personalRating != null) {
       entries.add(
         _StatusDockEntry(
           indicator: CinearaStatusDockIndicator.rating,
-          semanticLabel: widget.labels.personalRating,
-          accent: widget.ratingAccent ?? CinearaStatusColours.rating,
+          semanticLabel: source.labels.personalRating,
+          accent: source.ratingAccent ?? CinearaStatusColours.rating,
           icon: Icons.star_rounded,
-          value: _ratingText,
+          value: _ratingTextForWidget(source),
         ),
       );
     }
 
-    // -------------------------------------------------------------------------
-    // Watchlist
-    // -------------------------------------------------------------------------
-
-    if (widget.visibleIndicators.contains(
+    if (source.visibleIndicators.contains(
           CinearaStatusDockIndicator.watchlist,
         ) &&
-        widget.watchlist) {
+        source.watchlist) {
       entries.add(
         _StatusDockEntry(
           indicator: CinearaStatusDockIndicator.watchlist,
-          semanticLabel: widget.labels.watchlist,
-          accent: widget.watchlistAccent ?? CinearaStatusColours.watchlist,
+          semanticLabel: source.labels.watchlist,
+          accent: source.watchlistAccent ?? CinearaStatusColours.watchlist,
           icon: Icons.bookmark_rounded,
         ),
       );
     }
 
-    // -------------------------------------------------------------------------
-    // Favorite
-    // -------------------------------------------------------------------------
-
-    if (widget.visibleIndicators.contains(
+    if (source.visibleIndicators.contains(
           CinearaStatusDockIndicator.favorite,
         ) &&
-        widget.favorite) {
+        source.favorite) {
       entries.add(
         _StatusDockEntry(
           indicator: CinearaStatusDockIndicator.favorite,
-          semanticLabel: widget.labels.favorite,
-          accent: widget.favoriteAccent ?? CinearaStatusColours.favourite,
+          semanticLabel: source.labels.favorite,
+          accent: source.favoriteAccent ?? CinearaStatusColours.favourite,
           icon: Icons.favorite_rounded,
         ),
       );
     }
 
-    // -------------------------------------------------------------------------
-    // Collection — canonical top node
-    // -------------------------------------------------------------------------
-
-    if (widget.visibleIndicators.contains(
+    if (source.visibleIndicators.contains(
           CinearaStatusDockIndicator.collection,
         ) &&
-        widget.collection) {
+        source.collection) {
       entries.add(
         _StatusDockEntry(
           indicator: CinearaStatusDockIndicator.collection,
-          semanticLabel: widget.labels.collection,
-          accent: widget.collectionAccent ?? CinearaStatusColours.collection,
+          semanticLabel: source.labels.collection,
+          accent: source.collectionAccent ?? CinearaStatusColours.collection,
           icon: Icons.layers_rounded,
         ),
       );
@@ -840,14 +574,14 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     return entries;
   }
 
-  String get _ratingText {
-    final String? explicit = widget.personalRatingLabel?.trim();
+  String _ratingTextForWidget(CinearaStatusDock source) {
+    final String? explicit = source.personalRatingLabel?.trim();
 
     if (explicit != null && explicit.isNotEmpty) {
       return explicit;
     }
 
-    final double? rating = widget.personalRating;
+    final double? rating = source.personalRating;
 
     if (rating == null) {
       return '';
@@ -885,46 +619,87 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
         .join(', ');
   }
 
-  Color _accentForIndicator(CinearaStatusDockIndicator indicator) {
-    return switch (indicator) {
-      CinearaStatusDockIndicator.favorite =>
-        widget.favoriteAccent ?? CinearaStatusColours.favourite,
-
-      CinearaStatusDockIndicator.collection =>
-        widget.collectionAccent ?? CinearaStatusColours.collection,
-
-      CinearaStatusDockIndicator.watchlist =>
-        widget.watchlistAccent ?? CinearaStatusColours.watchlist,
-
-      CinearaStatusDockIndicator.rating =>
-        widget.ratingAccent ?? CinearaStatusColours.rating,
-    };
-  }
-
   bool get _hasNumericalRatingTransition {
     final double? from = _ratingAnimationFrom;
-
     final double? to = _ratingAnimationTo;
 
     return from != null && to != null && from != to;
   }
 
-  // ===========================================================================
-  // Public-controller actions
-  // ===========================================================================
-
-  /// Explicit reveal.
-  ///
-  /// This is intentionally different from a state-change reaction. It is used
-  /// for user inspection and presentation previews.
-  Future<void> _revealFromController() async {
-    await _runRevealSequence(
-      changedIndicators: const <CinearaStatusDockIndicator>{},
-      forceRevealStack: true,
-    );
+  Color _accentForIndicator(CinearaStatusDockIndicator indicator) {
+    return switch (indicator) {
+      CinearaStatusDockIndicator.favorite =>
+        widget.favoriteAccent ?? CinearaStatusColours.favourite,
+      CinearaStatusDockIndicator.collection =>
+        widget.collectionAccent ?? CinearaStatusColours.collection,
+      CinearaStatusDockIndicator.watchlist =>
+        widget.watchlistAccent ?? CinearaStatusColours.watchlist,
+      CinearaStatusDockIndicator.rating =>
+        widget.ratingAccent ?? CinearaStatusColours.rating,
+    };
   }
 
-  /// Reacts intelligently to actual media-state changes.
+  void _discardPendingStructureChange() {
+    _pendingStructureBefore = null;
+    _pendingStructureAfter = null;
+  }
+
+  _DockMutationTransition? _consumePendingMutation() {
+    final List<_StatusDockEntry>? before = _pendingStructureBefore;
+    final List<_StatusDockEntry>? after = _pendingStructureAfter;
+
+    _discardPendingStructureChange();
+
+    if (before == null || after == null) {
+      return null;
+    }
+
+    final _DockMutationTransition transition = _DockMutationTransition(
+      before: List<_StatusDockEntry>.unmodifiable(before),
+      after: List<_StatusDockEntry>.unmodifiable(after),
+    );
+
+    return transition.hasStructuralChange ? transition : null;
+  }
+
+  Future<void> _revealFromController() async {
+    _discardPendingStructureChange();
+
+    if (widget.mode != CinearaStatusDockMode.compact) {
+      return;
+    }
+
+    final List<_StatusDockEntry> entries = _activeEntries;
+
+    if (entries.length <= 1) {
+      return;
+    }
+
+    final int generation = _beginSequence(
+      visualEntriesOverride: null,
+      expandedMutation: null,
+      pulseIndicator: null,
+    );
+
+    await _expand(generation);
+
+    if (!_sequenceIsCurrent(generation)) {
+      return;
+    }
+
+    if (widget.autoCollapse) {
+      await _wait(widget.autoCollapseDelay, generation);
+
+      if (!_sequenceIsCurrent(generation)) {
+        return;
+      }
+
+      await _collapse(generation);
+    }
+
+    _clearSequencePresentation(generation);
+  }
+
   Future<void> _revealChanges(
     Set<CinearaStatusDockIndicator> changedIndicators,
   ) async {
@@ -932,13 +707,21 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
         .where(widget.visibleIndicators.contains)
         .toSet();
 
-    if (relevantChanges.isEmpty) {
+    final _DockMutationTransition? transition = _consumePendingMutation();
+
+    final bool numericalRatingChange =
+        relevantChanges.contains(CinearaStatusDockIndicator.rating) &&
+        _hasNumericalRatingTransition;
+
+    if (transition == null &&
+        relevantChanges.isEmpty &&
+        !numericalRatingChange) {
       return;
     }
 
-    await _runRevealSequence(
-      changedIndicators: relevantChanges,
-      forceRevealStack: false,
+    await _runChangeSequence(
+      transition: transition,
+      numericalRatingChange: numericalRatingChange,
     );
   }
 
@@ -948,17 +731,15 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     }
 
     final int generation = _beginSequence(
-      reactingIndicators: const <CinearaStatusDockIndicator>{},
+      visualEntriesOverride: null,
+      expandedMutation: null,
+      pulseIndicator: null,
     );
 
     await _collapse(generation);
 
-    _clearReactionState(generation);
+    _clearSequencePresentation(generation);
   }
-
-  // ===========================================================================
-  // Tap behaviour
-  // ===========================================================================
 
   void _handleCompactTap() {
     final List<_StatusDockEntry> entries = _activeEntries;
@@ -969,33 +750,27 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
       return;
     }
 
-    // A second tap while substantially open collapses immediately rather than
-    // restarting the reveal/auto-collapse sequence.
     if (_expansionController.value > 0.55) {
       unawaited(_collapseFromController());
-
       return;
     }
 
     unawaited(_revealFromController());
   }
 
-  // ===========================================================================
-  // Complete reveal / state-change sequence
-  // ===========================================================================
-
-  Future<void> _runRevealSequence({
-    required Set<CinearaStatusDockIndicator> changedIndicators,
-    required bool forceRevealStack,
+  Future<void> _runChangeSequence({
+    required _DockMutationTransition? transition,
+    required bool numericalRatingChange,
   }) async {
-    final List<_StatusDockEntry> entries = _activeEntries;
+    final bool compact = widget.mode == CinearaStatusDockMode.compact;
 
-    // If the dock became completely empty, reset its internal compact position.
-    //
-    // This matters especially when autoCollapse is disabled or when the final
-    // active indicator disappears while another sequence was still in flight.
-    if (entries.isEmpty) {
+    final double inheritedExpansion = _expansionController.value;
+
+    final bool dockWasFullyExpanded = compact && inheritedExpansion >= 0.999;
+
+    if (!_animationsEnabled) {
       _cancelCurrentSequence();
+      _discardPendingStructureChange();
 
       _expansionController.value =
           widget.mode == CinearaStatusDockMode.permanent ? 1 : 0;
@@ -1003,209 +778,116 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
       return;
     }
 
-    // =========================================================================
-    // Preserve inherited expansion state
-    // =========================================================================
+    // -----------------------------------------------------------------------
+    // Numerical-only Rating update
+    // -----------------------------------------------------------------------
 
-    // Capture this before _beginSequence() stops the previous expansion
-    // controller and invalidates that sequence's pending auto-collapse.
-    final double inheritedExpansion = _expansionController.value;
+    if (transition == null) {
+      final int generation = _beginSequence(
+        visualEntriesOverride: null,
+        expandedMutation: null,
+        pulseIndicator: null,
+      );
 
-    final AnimationStatus inheritedExpansionStatus =
-        _expansionController.status;
+      if (numericalRatingChange) {
+        _prepareRatingAnimation(generation);
+        await _runRatingChange(generation);
 
-    // The longer inherited-open delay is reserved strictly for a dock that was
-    // already stably and completely expanded.
+        if (!_sequenceIsCurrent(generation)) {
+          return;
+        }
+      }
+
+      if (compact && dockWasFullyExpanded && widget.autoCollapse) {
+        await _wait(_inheritedOpenCollapseDelay, generation);
+
+        if (!_sequenceIsCurrent(generation)) {
+          return;
+        }
+
+        await _collapse(generation);
+      }
+
+      _clearSequencePresentation(generation);
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // Structural mutation
     //
-    // A partial value must never receive this hold because doing so would freeze
-    // nodes while they geometrically overlap.
-    final bool dockWasFullyExpanded =
-        widget.mode == CinearaStatusDockMode.compact &&
-        inheritedExpansion >= 0.999 &&
-        inheritedExpansionStatus == AnimationStatus.completed;
-
-    // Any visible non-zero state that is not a stable completed expansion is
-    // treated as a transition.
+    // Every real structural change uses one shared magnetic vocabulary:
     //
-    // This also covers an unusual stopped partial controller value safely.
-    final bool dockWasMidTransition =
-        widget.mode == CinearaStatusDockMode.compact &&
-        inheritedExpansion > 0.001 &&
-        !dockWasFullyExpanded;
-
-    // =========================================================================
-    // Change classification
-    // =========================================================================
-
-    final bool ratingChanged = changedIndicators.contains(
-      CinearaStatusDockIndicator.rating,
-    );
-
-    final bool numericalRatingChange =
-        ratingChanged && _hasNumericalRatingTransition;
-
-    // -------------------------------------------------------------------------
-    // Added indicators
+    // ADD:
+    //   old chain → vacancy/reflow → full-size magnetic attach
     //
-    // Boolean indicators:
+    // REMOVE:
+    //   old chain → magnetic detach → vacancy → retained reflow
     //
-    // changed + active now
-    // => false -> true
+    // Compact always shows the OLD hierarchy first. This includes removals of
+    // the resting satellite and normally hidden states. There is deliberately
+    // no direct compact satellite swap for a real mutation.
     //
-    // Rating:
-    //
-    // null -> value
-    // => newly added Rating indicator
-    //
-    // value -> value
-    // => numerical update, not an addition
-    //
-    // value -> null
-    // => removal
-    // -------------------------------------------------------------------------
+    // Once the old hierarchy is fully expanded, removals detach immediately
+    // at mutation t=0. Additions either begin retained-node reflow at t=0 or,
+    // when no reflow is needed, begin magnetic attachment at t=0.
+    // -----------------------------------------------------------------------
 
-    final Set<CinearaStatusDockIndicator> addedIndicators = changedIndicators
-        .where((CinearaStatusDockIndicator indicator) {
-          if (!widget.visibleIndicators.contains(indicator)) {
-            return false;
-          }
-
-          return switch (indicator) {
-            CinearaStatusDockIndicator.rating =>
-              _ratingAnimationFrom == null && _ratingAnimationTo != null,
-
-            CinearaStatusDockIndicator.favorite => widget.favorite,
-
-            CinearaStatusDockIndicator.collection => widget.collection,
-
-            CinearaStatusDockIndicator.watchlist => widget.watchlist,
-          };
-        })
-        .toSet();
-
-    // =========================================================================
-    // Reveal policy
-    // =========================================================================
-
-    // The complete chain opens automatically only when a new state joins it.
-    //
-    // Explicit reveal() also opens the complete compact chain because it
-    // represents deliberate inspection, including Settings previews.
-    //
-    // Removal alone does not open a collapsed dock.
-    //
-    // Existing-rating numerical changes do not open a collapsed dock.
-    final bool shouldRevealStack =
-        forceRevealStack || addedIndicators.isNotEmpty;
-
-    // Only newly added states receive magnetic attachment.
-    final Set<CinearaStatusDockIndicator> attachmentIndicators =
-        addedIndicators;
+    final CinearaStatusDockIndicator? pulseIndicator =
+        transition.addedIndicators.isNotEmpty
+        ? _firstIndicatorInCanonicalOrder(transition.addedIndicators)
+        : null;
 
     final int generation = _beginSequence(
-      reactingIndicators: attachmentIndicators,
-      pulseIndicator: addedIndicators.isNotEmpty
-          ? _firstChangedIndicator(addedIndicators)
-          : null,
+      visualEntriesOverride: transition.before,
+      expandedMutation: null,
+      pulseIndicator: pulseIndicator,
     );
 
-    // =========================================================================
-    // Prepare numerical rating transition
-    // =========================================================================
+    if (compact && !dockWasFullyExpanded) {
+      // With 0/1 old entries there is no chain to unfold. Move directly to
+      // expanded geometry so the structural mutation can start immediately.
+      if (transition.before.length <= 1) {
+        _expansionController.value = 1;
+      } else {
+        await _expand(generation);
+
+        if (!_sequenceIsCurrent(generation)) {
+          return;
+        }
+      }
+    }
+
+    // There is deliberately no post-expansion delay and no end-of-frame
+    // handoff. The mutation starts immediately after Compact expansion reaches
+    // its completed state.
+    _activateExpandedMutation(generation, transition);
+
+    if (!_sequenceIsCurrent(generation)) {
+      return;
+    }
+
+    final List<Future<void>> feedback = <Future<void>>[
+      _runExpandedMutation(generation, transition),
+    ];
 
     if (numericalRatingChange) {
       _prepareRatingAnimation(generation);
+      feedback.add(_runRatingChange(generation));
     }
 
-    // =========================================================================
-    // Compact reveal
-    // =========================================================================
+    await Future.wait(feedback);
 
-    bool revealedStackThisSequence = false;
-
-    if (widget.mode == CinearaStatusDockMode.compact &&
-        entries.length > 1 &&
-        shouldRevealStack) {
-      revealedStackThisSequence = true;
-
-      await _expand(generation);
-
-      if (!_sequenceIsCurrent(generation)) {
-        return;
-      }
+    if (!_sequenceIsCurrent(generation)) {
+      return;
     }
 
-    // =========================================================================
-    // Interrupted-transition policy
-    //
-    // If a non-reveal change arrives while the stack is opening/collapsing,
-    // continue immediately toward compact state.
-    //
-    // Do not wait for the inherited-open delay.
-    //
-    // Examples:
-    //
-    // opening + remove
-    // → reverse immediately
-    //
-    // collapsing + remove
-    // → continue immediately
-    //
-    // collapsing + rating change
-    // → continue collapsing while the rating number animates
-    // =========================================================================
+    _deactivateExpandedMutation(generation);
 
-    final bool shouldCollapseTransitionImmediately =
-        widget.autoCollapse && !shouldRevealStack && dockWasMidTransition;
-
-    // =========================================================================
-    // Primary feedback
-    //
-    // Newly added nodes magnetically attach.
-    //
-    // An existing Rating changing numerically counts toward the new target.
-    //
-    // An inherited partial expansion collapses concurrently rather than being
-    // frozen while those feedback animations run.
-    // =========================================================================
-
-    final List<Future<void>> feedbackAnimations = <Future<void>>[];
-
-    if (attachmentIndicators.isNotEmpty) {
-      feedbackAnimations.add(_runAttachment(generation));
+    if (!_sequenceIsCurrent(generation)) {
+      return;
     }
 
-    if (numericalRatingChange) {
-      feedbackAnimations.add(_runRatingChange(generation));
-    }
-
-    if (shouldCollapseTransitionImmediately) {
-      feedbackAnimations.add(_collapse(generation));
-    }
-
-    if (feedbackAnimations.isNotEmpty) {
-      await Future.wait(feedbackAnimations);
-
-      if (!_sequenceIsCurrent(generation)) {
-        return;
-      }
-    }
-
-    // =========================================================================
-    // Rail pulse
-    //
-    // The full-chain rail pulse specifically communicates:
-    //
-    // "a new state joined this chain"
-    //
-    // It does not run for:
-    //
-    // - removals
-    // - numerical Rating updates
-    // - ordinary explicit reveal()
-    // =========================================================================
-
-    if (addedIndicators.isNotEmpty && entries.length > 1) {
+    if (transition.addedIndicators.isNotEmpty && transition.after.length > 1) {
       await _runPulse(generation);
 
       if (!_sequenceIsCurrent(generation)) {
@@ -1213,58 +895,31 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
       }
     }
 
-    // =========================================================================
-    // Permanent mode
-    // =========================================================================
+    if (compact && widget.autoCollapse) {
+      // If the mutation leaves the dock empty there is nothing to collapse.
+      if (transition.after.isNotEmpty) {
+        final Duration hold = transition.addedIndicators.isNotEmpty
+            ? widget.autoCollapseDelay
+            : _removalConfirmationDelay;
 
-    if (widget.mode == CinearaStatusDockMode.permanent) {
-      _clearReactionState(generation);
+        await _wait(hold, generation);
 
-      return;
-    }
+        if (!_sequenceIsCurrent(generation)) {
+          return;
+        }
 
-    // =========================================================================
-    // Compact return-to-rest policy
-    //
-    // 1. A stack deliberately revealed by this sequence receives the ordinary
-    //    auto-collapse delay.
-    //
-    // 2. A stack inherited in a fully expanded, stable state receives the
-    //    shorter inherited-open delay.
-    //
-    // 3. A stack inherited mid-transition has already been sent directly
-    //    toward collapsed state above and therefore receives no delay here.
-    // =========================================================================
+        await _collapse(generation);
 
-    final bool shouldReturnToCollapsed =
-        widget.autoCollapse &&
-        !shouldCollapseTransitionImmediately &&
-        (revealedStackThisSequence || dockWasFullyExpanded);
-
-    if (shouldReturnToCollapsed) {
-      final Duration collapseDelay = revealedStackThisSequence
-          ? widget.autoCollapseDelay
-          : _inheritedOpenCollapseDelay;
-
-      await _wait(collapseDelay, generation);
-
-      if (!_sequenceIsCurrent(generation)) {
-        return;
-      }
-
-      await _collapse(generation);
-
-      if (!_sequenceIsCurrent(generation)) {
-        return;
+        if (!_sequenceIsCurrent(generation)) {
+          return;
+        }
+      } else {
+        _expansionController.value = 0;
       }
     }
 
-    _clearReactionState(generation);
+    _clearSequencePresentation(generation);
   }
-
-  // ===========================================================================
-  // Expansion
-  // ===========================================================================
 
   Future<void> _expand(int generation) async {
     if (!_sequenceIsCurrent(generation)) {
@@ -1273,13 +928,11 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
 
     if (widget.mode != CinearaStatusDockMode.compact) {
       _expansionController.value = 1;
-
       return;
     }
 
     if (!_animationsEnabled) {
       _expansionController.value = 1;
-
       return;
     }
 
@@ -1290,10 +943,6 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     }
   }
 
-  // ===========================================================================
-  // Collapse
-  // ===========================================================================
-
   Future<void> _collapse(int generation) async {
     if (!_sequenceIsCurrent(generation)) {
       return;
@@ -1301,14 +950,11 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
 
     if (widget.mode != CinearaStatusDockMode.compact) {
       _expansionController.value = 1;
-
       return;
     }
 
     if (!_animationsEnabled) {
       _expansionController.value = 0;
-      _settleController.value = 1;
-
       return;
     }
 
@@ -1322,8 +968,6 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
       return;
     }
 
-    // Small final compression/overshoot makes the return of the non-anchor
-    // indicators feel as though they have physically settled into the anchor.
     try {
       await _settleController.forward(from: 0).orCancel;
     } on TickerCanceled {
@@ -1331,53 +975,57 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     }
   }
 
-  // ===========================================================================
-  // Changed-node magnetic attachment
-  // ===========================================================================
+  void _activateExpandedMutation(
+    int generation,
+    _DockMutationTransition transition,
+  ) {
+    if (!_sequenceIsCurrent(generation)) {
+      return;
+    }
 
-  Future<void> _runAttachment(int generation) async {
+    _mutationController
+      ..stop()
+      ..value = 0
+      ..duration = transition.mutationDuration;
+
+    if (mounted) {
+      setState(() {
+        _visualEntriesOverride = null;
+        _activeExpandedMutation = transition;
+      });
+    }
+  }
+
+  void _deactivateExpandedMutation(int generation) {
+    if (!_sequenceIsCurrent(generation) || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _activeExpandedMutation = null;
+      _visualEntriesOverride = null;
+    });
+  }
+
+  Future<void> _runExpandedMutation(
+    int generation,
+    _DockMutationTransition transition,
+  ) async {
     if (!_sequenceIsCurrent(generation)) {
       return;
     }
 
     if (!_animationsEnabled) {
-      _attachmentController.value = 1;
-
+      _mutationController.value = 1;
       return;
     }
 
     try {
-      await _attachmentController.forward(from: 0).orCancel;
+      await _mutationController.forward().orCancel;
     } on TickerCanceled {
       return;
     }
   }
-
-  // ===========================================================================
-  // Rail pulse
-  // ===========================================================================
-
-  Future<void> _runPulse(int generation) async {
-    if (!_sequenceIsCurrent(generation)) {
-      return;
-    }
-
-    if (!_animationsEnabled) {
-      _pulseController.value = 1;
-
-      return;
-    }
-
-    try {
-      await _pulseController.forward(from: 0).orCancel;
-    } on TickerCanceled {
-      return;
-    }
-  }
-
-  // ===========================================================================
-  // Rating change
-  // ===========================================================================
 
   void _prepareRatingAnimation(int generation) {
     if (!_sequenceIsCurrent(generation)) {
@@ -1390,7 +1038,6 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
         ..value = 1;
 
       _ratingAnimationActive = false;
-
       return;
     }
 
@@ -1411,41 +1058,21 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     }
 
     final double? from = _ratingAnimationFrom;
-
     final double? to = _ratingAnimationTo;
 
-    // Only animate:
-    //
-    // existing numerical Rating
-    //        ↓
-    // another numerical Rating
-    //
-    // null -> value is an addition.
-    //
-    // value -> null is removal.
     if (from == null || to == null || from == to) {
       _finishRatingAnimation(generation);
-
       return;
     }
 
     if (!_animationsEnabled) {
       _finishRatingAnimation(generation);
-
       return;
     }
 
-    // Larger changes receive more time while remaining bounded.
-    //
-    // Examples:
-    //
-    // 8.4 -> 8.5  ≈ 550 ms
-    // 6.0 -> 8.5  ≈ 675 ms
-    // 3.0 -> 9.5  ≈ 950 ms
     final double distance = (to - from).abs();
 
     final int rawDurationMs = (500 + (distance * 70)).round();
-
     final int durationMs = rawDurationMs.clamp(550, 950).toInt();
 
     _ratingController.duration = Duration(milliseconds: durationMs);
@@ -1472,36 +1099,43 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
       setState(() {
         _ratingAnimationActive = false;
       });
-
       return;
     }
 
     _ratingAnimationActive = false;
   }
 
-  // ===========================================================================
-  // Sequence management
-  // ===========================================================================
+  Future<void> _runPulse(int generation) async {
+    if (!_sequenceIsCurrent(generation)) {
+      return;
+    }
+
+    if (!_animationsEnabled) {
+      _pulseController.value = 1;
+      return;
+    }
+
+    try {
+      await _pulseController.forward(from: 0).orCancel;
+    } on TickerCanceled {
+      return;
+    }
+  }
 
   int _beginSequence({
-    required Set<CinearaStatusDockIndicator> reactingIndicators,
-    CinearaStatusDockIndicator? pulseIndicator,
+    required List<_StatusDockEntry>? visualEntriesOverride,
+    required _DockMutationTransition? expandedMutation,
+    required CinearaStatusDockIndicator? pulseIndicator,
   }) {
     _sequenceGeneration++;
 
-    // Preserve the current expansion value while stopping the previous
-    // expansion/collapse animation.
-    //
-    // The new sequence decides whether to continue expanding or reverse toward
-    // collapsed state from exactly the geometry currently on screen.
     _expansionController.stop();
-
-    _attachmentController.stop();
+    _mutationController.stop();
     _pulseController.stop();
     _settleController.stop();
     _ratingController.stop();
 
-    _attachmentController.value = 1;
+    _mutationController.value = expandedMutation == null ? 1 : 0;
     _pulseController.value = 1;
     _settleController.value = 1;
     _ratingController.value = 1;
@@ -1510,10 +1144,8 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
 
     if (mounted) {
       setState(() {
-        _reactingIndicators = Set<CinearaStatusDockIndicator>.unmodifiable(
-          reactingIndicators,
-        );
-
+        _visualEntriesOverride = visualEntriesOverride;
+        _activeExpandedMutation = expandedMutation;
         _pulseIndicator = pulseIndicator;
       });
     }
@@ -1525,33 +1157,31 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     _sequenceGeneration++;
 
     _expansionController.stop();
-    _attachmentController.stop();
+    _mutationController.stop();
     _pulseController.stop();
     _settleController.stop();
     _ratingController.stop();
 
-    _attachmentController.value = 1;
+    _mutationController.value = 1;
     _pulseController.value = 1;
     _settleController.value = 1;
     _ratingController.value = 1;
 
-    _reactingIndicators = const <CinearaStatusDockIndicator>{};
-
+    _activeExpandedMutation = null;
+    _visualEntriesOverride = null;
     _pulseIndicator = null;
-
     _ratingAnimationActive = false;
   }
 
-  void _clearReactionState(int generation) {
+  void _clearSequencePresentation(int generation) {
     if (!_sequenceIsCurrent(generation) || !mounted) {
       return;
     }
 
     setState(() {
-      _reactingIndicators = const <CinearaStatusDockIndicator>{};
-
+      _activeExpandedMutation = null;
+      _visualEntriesOverride = null;
       _pulseIndicator = null;
-
       _ratingAnimationActive = false;
     });
   }
@@ -1561,23 +1191,15 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
   }
 
   Future<void> _wait(Duration duration, int generation) async {
-    if (duration.inMicroseconds <= 0) {
+    if (duration.inMicroseconds <= 0 || !_sequenceIsCurrent(generation)) {
       return;
     }
 
     await Future<void>.delayed(duration);
-
-    if (!_sequenceIsCurrent(generation)) {
-      return;
-    }
   }
 
-  // ===========================================================================
-  // Animation cleanup
-  // ===========================================================================
-
   void _finishDecorativeAnimationsImmediately() {
-    _attachmentController
+    _mutationController
       ..stop()
       ..value = 1;
 
@@ -1593,23 +1215,19 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
       ..stop()
       ..value = 1;
 
+    _activeExpandedMutation = null;
+    _visualEntriesOverride = null;
+    _pulseIndicator = null;
     _ratingAnimationActive = false;
 
-    if (widget.mode == CinearaStatusDockMode.permanent) {
-      _expansionController
-        ..stop()
-        ..value = 1;
-    }
+    _expansionController
+      ..stop()
+      ..value = widget.mode == CinearaStatusDockMode.permanent ? 1 : 0;
   }
 
-  // ===========================================================================
-  // Reaction helpers
-  // ===========================================================================
-
-  CinearaStatusDockIndicator? _firstChangedIndicator(
-    Set<CinearaStatusDockIndicator> changedIndicators,
+  CinearaStatusDockIndicator? _firstIndicatorInCanonicalOrder(
+    Set<CinearaStatusDockIndicator> indicators,
   ) {
-    // Match the canonical bottom-to-top dock hierarchy.
     const List<CinearaStatusDockIndicator> priority =
         <CinearaStatusDockIndicator>[
           CinearaStatusDockIndicator.rating,
@@ -1619,7 +1237,7 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
         ];
 
     for (final CinearaStatusDockIndicator indicator in priority) {
-      if (changedIndicators.contains(indicator)) {
+      if (indicators.contains(indicator)) {
         return indicator;
       }
     }
@@ -1641,16 +1259,24 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     return Theme.of(context).colorScheme.primary;
   }
 
-  // ===========================================================================
-  // Build
-  // ===========================================================================
-
   @override
   Widget build(BuildContext context) {
-    final List<_StatusDockEntry> entries = _activeEntries;
+    final List<_StatusDockEntry> activeEntries = _activeEntries;
 
-    // No dormant line, handle, node, rail, or other affordance.
-    if (entries.isEmpty) {
+    final List<_StatusDockEntry>? pendingOverride =
+        _pendingStructureBefore != null &&
+            _activeExpandedMutation == null &&
+            _visualEntriesOverride == null
+        ? _pendingStructureBefore
+        : null;
+
+    final List<_StatusDockEntry> visualEntries =
+        _visualEntriesOverride ?? pendingOverride ?? activeEntries;
+
+    final bool hasVisualContent =
+        visualEntries.isNotEmpty || _activeExpandedMutation != null;
+
+    if (!hasVisualContent) {
       return const SizedBox.shrink();
     }
 
@@ -1667,28 +1293,21 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
       highContrast: highContrast,
     );
 
-    final List<CinearaStatusDockIndicator> activeReactingIndicators = entries
-        .where(
-          (_StatusDockEntry entry) =>
-              _reactingIndicators.contains(entry.indicator),
-        )
-        .map((_StatusDockEntry entry) => entry.indicator)
-        .toList(growable: false);
-
     final Widget visual = _StatusDockVisual(
-      entries: entries,
+      visualEntries: visualEntries,
       mode: widget.mode,
       variant: widget.variant,
+      layout: widget.layout,
       side: widget.side,
       metrics: metrics,
       highContrast: highContrast,
       railPalette: railPalette,
       expansionAnimation: _expansionController,
-      attachmentAnimation: _attachmentController,
-      settleAnimation: _settleController,
+      mutationAnimation: _mutationController,
       pulseAnimation: _pulseController,
-      pulseAccent: _pulseAccent(entries),
-      reactingIndicators: activeReactingIndicators,
+      settleAnimation: _settleController,
+      pulseAccent: _pulseAccent(activeEntries),
+      expandedMutation: _activeExpandedMutation,
       ratingAnimation: _ratingController,
       ratingAnimationActive: _ratingAnimationActive,
       ratingAnimationFrom: _ratingAnimationFrom,
@@ -1698,25 +1317,48 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
     final bool canTapToReveal =
         widget.mode == CinearaStatusDockMode.compact &&
         widget.tapToExpand &&
-        entries.length > 1;
+        activeEntries.length > 1;
 
     final Widget interactionChild;
 
     if (canTapToReveal) {
-      const double minimumTapTarget = 56;
+      const double minimumTapTarget = 48;
+
+      final List<_StatusDockEntry> targetEntries = visualEntries.isEmpty
+          ? activeEntries
+          : visualEntries;
+
+      final double restingWidth =
+          widget.layout == CinearaStatusDockLayout.horizontal
+          ? metrics.horizontalCompactRestWidthFor(targetEntries)
+          : metrics.maximumWidthFor(targetEntries);
+
+      final double restingHeight =
+          widget.layout == CinearaStatusDockLayout.horizontal
+          ? metrics.horizontalCompactRestHeightFor(targetEntries.length)
+          : metrics.compactRestHeightFor(targetEntries.length);
 
       final double minimumWidth = math
-          .max(minimumTapTarget, metrics.maximumWidthFor(entries) + 12)
+          .max(minimumTapTarget, restingWidth + 8)
           .toDouble();
 
       final double minimumHeight = math
-          .max(minimumTapTarget, metrics.outerDiameter + 12)
+          .max(minimumTapTarget, restingHeight + 8)
           .toDouble();
 
-      final AlignmentGeometry alignment =
-          widget.side == CinearaStatusDockSide.end
-          ? AlignmentDirectional.bottomEnd
-          : AlignmentDirectional.bottomStart;
+      final AlignmentGeometry alignment = switch ((
+        widget.layout,
+        widget.side,
+      )) {
+        (CinearaStatusDockLayout.horizontal, CinearaStatusDockSide.end) =>
+          AlignmentDirectional.centerEnd,
+        (CinearaStatusDockLayout.horizontal, CinearaStatusDockSide.start) =>
+          AlignmentDirectional.centerStart,
+        (CinearaStatusDockLayout.vertical, CinearaStatusDockSide.end) =>
+          AlignmentDirectional.bottomEnd,
+        (CinearaStatusDockLayout.vertical, CinearaStatusDockSide.start) =>
+          AlignmentDirectional.bottomStart,
+      };
 
       interactionChild = GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -1735,14 +1377,14 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
 
     final Widget semanticChild = ExcludeSemantics(child: interactionChild);
 
-    if (widget.excludeFromSemantics) {
+    if (widget.excludeFromSemantics || activeEntries.isEmpty) {
       return semanticChild;
     }
 
     return Semantics(
       container: true,
       label: _resolvedSemanticLabel,
-      value: _resolveSemanticValue(entries),
+      value: _resolveSemanticValue(activeEntries),
       button: canTapToReveal,
       onTap: canTapToReveal ? _handleCompactTap : null,
       child: semanticChild,
@@ -1756,50 +1398,48 @@ final class _CinearaStatusDockState extends State<CinearaStatusDock>
 
 final class _StatusDockVisual extends StatelessWidget {
   const _StatusDockVisual({
-    required this.entries,
+    required this.visualEntries,
     required this.mode,
     required this.variant,
+    required this.layout,
     required this.side,
     required this.metrics,
     required this.highContrast,
     required this.railPalette,
     required this.expansionAnimation,
-    required this.attachmentAnimation,
-    required this.settleAnimation,
+    required this.mutationAnimation,
     required this.pulseAnimation,
+    required this.settleAnimation,
     required this.pulseAccent,
-    required this.reactingIndicators,
+    required this.expandedMutation,
     required this.ratingAnimation,
     required this.ratingAnimationActive,
     required this.ratingAnimationFrom,
     required this.ratingAnimationTo,
   });
 
-  final List<_StatusDockEntry> entries;
+  final List<_StatusDockEntry> visualEntries;
 
   final CinearaStatusDockMode mode;
   final CinearaStatusDockVariant variant;
+  final CinearaStatusDockLayout layout;
   final CinearaStatusDockSide side;
 
   final _StatusDockMetrics metrics;
-
   final bool highContrast;
-
   final _StatusDockRailPalette railPalette;
 
   final Animation<double> expansionAnimation;
-  final Animation<double> attachmentAnimation;
-  final Animation<double> settleAnimation;
+  final Animation<double> mutationAnimation;
   final Animation<double> pulseAnimation;
+  final Animation<double> settleAnimation;
 
   final Color pulseAccent;
 
-  final List<CinearaStatusDockIndicator> reactingIndicators;
+  final _DockMutationTransition? expandedMutation;
 
   final Animation<double> ratingAnimation;
-
   final bool ratingAnimationActive;
-
   final double? ratingAnimationFrom;
   final double? ratingAnimationTo;
 
@@ -1811,291 +1451,1016 @@ final class _StatusDockVisual extends StatelessWidget {
         : expansionAnimation;
 
     return AnimatedBuilder(
-      animation: resolvedExpansion,
+      animation: Listenable.merge(<Listenable>[
+        resolvedExpansion,
+        mutationAnimation,
+        pulseAnimation,
+        settleAnimation,
+        ratingAnimation,
+      ]),
       builder: (BuildContext context, Widget? child) {
-        final double expansion = Curves.easeInOutCubic.transform(
-          resolvedExpansion.value.clamp(0.0, 1.0).toDouble(),
-        );
+        final double expansion = resolvedExpansion.value
+            .clamp(0.0, 1.0)
+            .toDouble();
 
-        final _StatusDockEntry anchor = entries.first;
+        if (expandedMutation != null &&
+            (mode == CinearaStatusDockMode.permanent || expansion >= 0.999)) {
+          if (layout == CinearaStatusDockLayout.horizontal) {
+            return _buildHorizontalExpandedMutation(
+              context: context,
+              transition: expandedMutation!,
+              progress: mutationAnimation.value.clamp(0.0, 1.0).toDouble(),
+            );
+          }
 
-        final double collapsedWidth = metrics.widthFor(anchor);
+          return _buildVerticalExpandedMutation(
+            context: context,
+            transition: expandedMutation!,
+            progress: mutationAnimation.value.clamp(0.0, 1.0).toDouble(),
+          );
+        }
 
-        final double expandedWidth = metrics.maximumWidthFor(entries);
+        if (layout == CinearaStatusDockLayout.horizontal) {
+          return _buildHorizontalNormalDock(
+            context: context,
+            dockEntries: visualEntries,
+            expansion: expansion,
+          );
+        }
 
-        final double collapsedHeight = metrics.outerDiameter;
-
-        final double expandedHeight = metrics.heightFor(entries.length);
-
-        final double currentWidth = _lerp(
-          collapsedWidth,
-          expandedWidth,
-          expansion,
-        );
-
-        final double currentHeight = _lerp(
-          collapsedHeight,
-          expandedHeight,
-          expansion,
-        );
-
-        final List<_StatusDockEntry> nonAnchorEntries = entries
-            .skip(1)
-            .toList(growable: false);
-
-        return SizedBox(
-          width: currentWidth,
-          height: currentHeight,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              // ---------------------------------------------------------
-              // Rail
-              // ---------------------------------------------------------
-              if (entries.length > 1)
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _StatusDockRailPainter(
-                      repaint: pulseAnimation,
-                      count: entries.length,
-                      side: side,
-                      metrics: metrics,
-                      railColor: railPalette.rail,
-                      pulseColor: pulseAccent,
-                      pulse: pulseAnimation,
-                      expansionProgress: expansion,
-                    ),
-                  ),
-                ),
-
-              // ---------------------------------------------------------
-              // Non-anchor nodes
-              // ---------------------------------------------------------
-              if (expansion > 0.001)
-                for (
-                  int index = nonAnchorEntries.length - 1;
-                  index >= 0;
-                  index--
-                )
-                  _positionedEntry(
-                    entry: nonAnchorEntries[index],
-                    fullIndex: index + 1,
-                    expansion: expansion,
-                    reactingIndicators: reactingIndicators,
-                  ),
-
-              // ---------------------------------------------------------
-              // Stable anchor
-              // ---------------------------------------------------------
-              _positionedEntry(
-                entry: anchor,
-                fullIndex: 0,
-                expansion: expansion,
-                reactingIndicators: reactingIndicators,
-                isAnchor: true,
-              ),
-            ],
-          ),
+        return _buildVerticalNormalDock(
+          context: context,
+          dockEntries: visualEntries,
+          expansion: expansion,
         );
       },
     );
   }
 
-  Widget _positionedEntry({
-    required _StatusDockEntry entry,
-    required int fullIndex,
+  Widget _buildVerticalNormalDock({
+    required BuildContext context,
+    required List<_StatusDockEntry> dockEntries,
     required double expansion,
-    required List<CinearaStatusDockIndicator> reactingIndicators,
-    bool isAnchor = false,
   }) {
-    final double targetBottom = fullIndex * metrics.nodeExtent;
+    if (dockEntries.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-    final double animatedBottom = targetBottom * expansion;
+    final double easedExpansion = Curves.easeInOutCubic.transform(expansion);
 
-    final int reactionIndex = reactingIndicators.indexOf(entry.indicator);
+    final _StatusDockEntry anchor = dockEntries.first;
 
-    final int reactionCount = reactingIndicators.length;
+    final double collapsedWidth = metrics.widthFor(anchor);
+    final double expandedWidth = metrics.maximumWidthFor(dockEntries);
 
-    final Widget slot = _StatusDockSlot(
-      key: ValueKey<CinearaStatusDockIndicator>(entry.indicator),
+    final double collapsedHeight = metrics.compactRestHeightFor(
+      dockEntries.length,
+    );
+    final double expandedHeight = metrics.heightFor(dockEntries.length);
+
+    final double currentWidth = mode == CinearaStatusDockMode.permanent
+        ? expandedWidth
+        : _lerp(collapsedWidth, expandedWidth, easedExpansion);
+
+    final double currentHeight = mode == CinearaStatusDockMode.permanent
+        ? expandedHeight
+        : _lerp(collapsedHeight, expandedHeight, easedExpansion);
+
+    final List<_RailNodeSnapshot> railNodes = <_RailNodeSnapshot>[
+      _RailNodeSnapshot(
+        bottom: 0,
+        diameter: metrics.outerDiameter,
+        presence: 1,
+      ),
+    ];
+
+    final List<Widget> hiddenNodes = <Widget>[];
+
+    // -----------------------------------------------------------------------
+    // Satellite
+    //
+    // It is the only node permitted to overlap the anchor, and only around
+    // Compact rest. Hidden nodes never emerge from the satellite position.
+    // They always magnetically attach directly into their own vacant slots.
+    // -----------------------------------------------------------------------
+
+    _DockNodePose? satellitePose;
+    double satelliteMagneticDx = 0;
+
+    if (dockEntries.length > 1) {
+      final double satelliteProgress = mode == CinearaStatusDockMode.permanent
+          ? 1
+          : Curves.easeInOutCubic.transform(
+              _intervalProgress(expansion, start: 0.00, end: 0.30),
+            );
+
+      satellitePose = _lerpPose(
+        _compactSatellitePose(metrics),
+        _expandedSlotPose(metrics, 1),
+        satelliteProgress,
+      );
+
+      // The compact satellite retains its compressed size until it has begun
+      // physically separating, then grows into the ordinary full-size link.
+      satellitePose = _DockNodePose(
+        edgeOffset: satellitePose.edgeOffset,
+        bottom: satellitePose.bottom,
+        scale: _lerp(
+          metrics.satelliteScale,
+          1,
+          Curves.easeOutCubic.transform(satelliteProgress),
+        ),
+      );
+
+      final double satelliteRailPresence = _intervalProgress(
+        satelliteProgress,
+        start: 0.78,
+        end: 1,
+      );
+
+      railNodes.add(
+        _RailNodeSnapshot(
+          bottom: satellitePose.bottom,
+          diameter: metrics.outerDiameter * satellitePose.scale,
+          presence: satelliteRailPresence,
+        ),
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // Hidden presentation nodes
+    //
+    // Every hidden node occupies its final vertical slot from the first frame
+    // in which it is rendered. It approaches only horizontally. Therefore it
+    // can never pass through another badge during reveal/collapse.
+    // -----------------------------------------------------------------------
+
+    if (dockEntries.length > 2) {
+      final int hiddenCount = dockEntries.length - 2;
+
+      for (int index = dockEntries.length - 1; index >= 2; index--) {
+        final int hiddenOrdinal = index - 2;
+
+        final double attachProgress = mode == CinearaStatusDockMode.permanent
+            ? 1
+            : _presentationHiddenAttachProgress(
+                expansion,
+                ordinal: hiddenOrdinal,
+                count: hiddenCount,
+              );
+
+        if (attachProgress <= 0.001) {
+          continue;
+        }
+
+        final double easedAttach = Curves.easeOutCubic.transform(
+          attachProgress,
+        );
+
+        final double magneticDx = _magneticDx(
+          context: context,
+          side: side,
+          travel: metrics.attachmentTravel * (1 - easedAttach),
+        );
+
+        final _DockNodePose pose = _expandedSlotPose(metrics, index);
+
+        railNodes.add(
+          _RailNodeSnapshot(
+            bottom: pose.bottom,
+            diameter: metrics.outerDiameter,
+            presence: _intervalProgress(attachProgress, start: 0.68, end: 1),
+          ),
+        );
+
+        hiddenNodes.add(
+          _positionNode(
+            entry: dockEntries[index],
+            pose: pose,
+            physicalDx: magneticDx,
+          ),
+        );
+      }
+    }
+
+    return SizedBox(
+      width: currentWidth,
+      height: currentHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _PhysicalDockRailPainter(
+                nodes: railNodes,
+                side: side,
+                metrics: metrics,
+                railColor: railPalette.rail,
+                pulseColor: pulseAccent,
+                pulse: pulseAnimation,
+              ),
+            ),
+          ),
+
+          ...hiddenNodes,
+
+          _positionNode(
+            entry: anchor,
+            pose: _DockNodePose.anchor(),
+            isAnchor: true,
+          ),
+
+          if (satellitePose != null)
+            _positionNode(
+              entry: dockEntries[1],
+              pose: satellitePose,
+              physicalDx: satelliteMagneticDx,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVerticalExpandedMutation({
+    required BuildContext context,
+    required _DockMutationTransition transition,
+    required double progress,
+  }) {
+    final _MutationTiming timing = _MutationTiming.resolve(transition);
+
+    final int maximumCount = math
+        .max(transition.before.length, transition.after.length)
+        .toInt();
+
+    final double width = metrics.maximumWidthFor(<_StatusDockEntry>[
+      ...transition.before,
+      ...transition.after,
+    ]);
+
+    final double height = metrics.heightFor(maximumCount);
+
+    final List<_RailNodeSnapshot> railNodes = <_RailNodeSnapshot>[];
+    final List<Widget> renderedNodes = <Widget>[];
+
+    final List<CinearaStatusDockIndicator> addedOrdered = transition.after
+        .where(
+          (_StatusDockEntry entry) =>
+              transition.addedIndicators.contains(entry.indicator),
+        )
+        .map((_StatusDockEntry entry) => entry.indicator)
+        .toList(growable: false);
+
+    final List<CinearaStatusDockIndicator> removedOrdered = transition.before
+        .where(
+          (_StatusDockEntry entry) =>
+              transition.removedIndicators.contains(entry.indicator),
+        )
+        .map((_StatusDockEntry entry) => entry.indicator)
+        .toList(growable: false);
+
+    // -----------------------------------------------------------------------
+    // Removed nodes detach first.
+    //
+    // Retained nodes do not move until every removed node has vacated its slot.
+    // -----------------------------------------------------------------------
+
+    for (int oldIndex = 0; oldIndex < transition.before.length; oldIndex++) {
+      final _StatusDockEntry oldEntry = transition.before[oldIndex];
+
+      if (!transition.removedIndicators.contains(oldEntry.indicator)) {
+        continue;
+      }
+
+      final int ordinal = removedOrdered.indexOf(oldEntry.indicator);
+
+      final double detachProgress = timing.detachProgress(
+        progress,
+        ordinal: ordinal,
+        count: removedOrdered.length,
+      );
+
+      if (detachProgress >= 0.999) {
+        continue;
+      }
+
+      final double easedDetach = Curves.easeInCubic.transform(detachProgress);
+
+      final _DockNodePose pose = _expandedSlotPose(metrics, oldIndex);
+
+      renderedNodes.add(
+        _positionNode(
+          entry: oldEntry,
+          pose: pose,
+          physicalDx: _magneticDx(
+            context: context,
+            side: side,
+            travel: metrics.attachmentTravel * easedDetach,
+          ),
+        ),
+      );
+
+      railNodes.add(
+        _RailNodeSnapshot(
+          bottom: pose.bottom,
+          diameter: metrics.outerDiameter,
+          presence: 1 - easedDetach,
+        ),
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // Retained nodes reflow only after removals are clear.
+    //
+    // Since canonical ordering is preserved, linearly interpolating slot
+    // positions cannot make neighboring retained nodes cross one another.
+    // -----------------------------------------------------------------------
+
+    final double reflowProgress = Curves.easeInOutCubic.transform(
+      timing.reflowProgress(progress),
+    );
+
+    for (int oldIndex = 0; oldIndex < transition.before.length; oldIndex++) {
+      final _StatusDockEntry oldEntry = transition.before[oldIndex];
+
+      if (!transition.retainedIndicators.contains(oldEntry.indicator)) {
+        continue;
+      }
+
+      final int newIndex = transition.after.indexWhere(
+        (_StatusDockEntry entry) => entry.indicator == oldEntry.indicator,
+      );
+
+      if (newIndex < 0) {
+        continue;
+      }
+
+      final _StatusDockEntry newEntry = transition.after[newIndex];
+
+      final _DockNodePose pose = _lerpPose(
+        _expandedSlotPose(metrics, oldIndex),
+        _expandedSlotPose(metrics, newIndex),
+        reflowProgress,
+      );
+
+      renderedNodes.add(
+        _positionNode(
+          entry: newEntry,
+          pose: pose,
+          isAnchor: newIndex == 0 && reflowProgress >= 0.999,
+        ),
+      );
+
+      railNodes.add(
+        _RailNodeSnapshot(
+          bottom: pose.bottom,
+          diameter: metrics.outerDiameter,
+          presence: 1,
+        ),
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // New nodes attach only after their final slots are vacant.
+    //
+    // They are full size from their first visible frame and travel only a few
+    // logical pixels horizontally into the rail.
+    // -----------------------------------------------------------------------
+
+    for (int newIndex = 0; newIndex < transition.after.length; newIndex++) {
+      final _StatusDockEntry newEntry = transition.after[newIndex];
+
+      if (!transition.addedIndicators.contains(newEntry.indicator)) {
+        continue;
+      }
+
+      final int ordinal = addedOrdered.indexOf(newEntry.indicator);
+
+      final double attachProgress = timing.attachProgress(
+        progress,
+        ordinal: ordinal,
+        count: addedOrdered.length,
+      );
+
+      if (attachProgress <= 0.001) {
+        continue;
+      }
+
+      final double easedAttach = Curves.easeOutCubic.transform(attachProgress);
+
+      final _DockNodePose pose = _expandedSlotPose(metrics, newIndex);
+
+      renderedNodes.add(
+        _positionNode(
+          entry: newEntry,
+          pose: pose,
+          physicalDx: _magneticDx(
+            context: context,
+            side: side,
+            travel: metrics.attachmentTravel * (1 - easedAttach),
+          ),
+          isAnchor: newIndex == 0 && attachProgress >= 0.999,
+        ),
+      );
+
+      railNodes.add(
+        _RailNodeSnapshot(
+          bottom: pose.bottom,
+          diameter: metrics.outerDiameter,
+          presence: _intervalProgress(attachProgress, start: 0.68, end: 1),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _PhysicalDockRailPainter(
+                nodes: railNodes,
+                side: side,
+                metrics: metrics,
+                railColor: railPalette.rail,
+                pulseColor: pulseAccent,
+                pulse: const AlwaysStoppedAnimation<double>(1),
+              ),
+            ),
+          ),
+          ...renderedNodes,
+        ],
+      ),
+    );
+  }
+
+  CinearaStatusDockSide get _horizontalNodeSignalSide {
+    // `side` describes which logical edge the horizontal chain is anchored to.
+    // Node internals face the opposite way so the semantic signal (the star on
+    // the Rating pill) sits on the expansion edge.
+    //
+    // side=start  -> chain grows toward end  -> Rating is [9.2 ★]
+    // side=end    -> chain grows toward start -> Rating is [★ 9.2]
+    return side == CinearaStatusDockSide.start
+        ? CinearaStatusDockSide.end
+        : CinearaStatusDockSide.start;
+  }
+
+  // =========================================================================
+  // Horizontal list presentation
+  // =========================================================================
+
+  /// List-oriented presentation.
+  ///
+  /// Compact rest deliberately uses the same perched satellite silhouette as
+  /// the vertical dock. For a Rating anchor, the star stays on the expansion
+  /// edge and the real second-state satellite perches over that star:
+  ///
+  /// ```text
+  ///          ◉
+  /// [ 9.2 ★ ]
+  /// ```
+  ///
+  /// The satellite is the real second active state. It is not a count.
+  ///
+  /// With [CinearaStatusDockSide.start], reveal proceeds down and then toward
+  /// logical end — right in LTR. The Rating node therefore places its star on
+  /// its logical end, so the chain visually grows *from the star*:
+  ///
+  /// ```text
+  ///          ◉
+  /// [ 9.2 ★ ]
+  ///       ↓
+  /// [ 9.2 ★ ]─[bookmark]
+  ///       ↓
+  /// [ 9.2 ★ ]─[bookmark]─[favorite]─[collection]
+  /// ```
+  ///
+  /// The satellite first drops to the bottom baseline while growing to its
+  /// ordinary full size and moving into canonical horizontal slot 1. Entry 2+
+  /// then descend directly into their own already-vacant slots to the right.
+  ///
+  /// Permanent mode skips the compact satellite and stays as the complete
+  /// horizontal chain. Vertical behavior is intentionally untouched.
+  Widget _buildHorizontalNormalDock({
+    required BuildContext context,
+    required List<_StatusDockEntry> dockEntries,
+    required double expansion,
+  }) {
+    if (dockEntries.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final _StatusDockEntry anchor = dockEntries.first;
+    final double easedExpansion = Curves.easeInOutCubic.transform(expansion);
+
+    final double collapsedWidth = metrics.horizontalCompactRestWidthFor(
+      dockEntries,
+    );
+    final double expandedWidth = metrics.horizontalWidthFor(dockEntries);
+
+    final double currentWidth = mode == CinearaStatusDockMode.permanent
+        ? expandedWidth
+        : _lerp(collapsedWidth, expandedWidth, easedExpansion);
+
+    // Keep a stable vertical box for Compact throughout reveal/collapse so the
+    // anchor stays fixed on the bottom baseline while the satellite descends.
+    final double currentHeight = mode == CinearaStatusDockMode.permanent
+        ? metrics.outerDiameter
+        : metrics.horizontalCompactRestHeightFor(dockEntries.length);
+
+    final List<_HorizontalRailNodeSnapshot> railNodes =
+        <_HorizontalRailNodeSnapshot>[
+          _HorizontalRailNodeSnapshot(
+            edgeOffset: 0,
+            width: metrics.widthFor(anchor),
+            presence: 1,
+          ),
+        ];
+
+    final List<Widget> hiddenNodes = <Widget>[];
+
+    // -----------------------------------------------------------------------
+    // Perched satellite
+    //
+    // At rest it occupies the same upper-corner position as the compact
+    // vertical dock. During reveal it moves down to bottom = 0 and outward
+    // toward horizontal slot 1.
+    // -----------------------------------------------------------------------
+
+    _DockNodePose? satellitePose;
+
+    if (dockEntries.length > 1) {
+      final double satelliteProgress = mode == CinearaStatusDockMode.permanent
+          ? 1
+          : Curves.easeInOutCubic.transform(
+              _intervalProgress(expansion, start: 0.00, end: 0.34),
+            );
+
+      satellitePose = _lerpPose(
+        _horizontalPerchedSatellitePose(metrics, anchor),
+        _horizontalSlotPose(metrics, dockEntries, 1),
+        satelliteProgress,
+      );
+
+      satellitePose = _DockNodePose(
+        edgeOffset: satellitePose.edgeOffset,
+        bottom: satellitePose.bottom,
+        scale: _lerp(
+          metrics.satelliteScale,
+          1,
+          Curves.easeOutCubic.transform(satelliteProgress),
+        ),
+      );
+
+      final double scaledDiameter = metrics.outerDiameter * satellitePose.scale;
+      final double scaledInset = (metrics.outerDiameter - scaledDiameter) / 2;
+
+      // The connector should not appear while the satellite is visibly perched.
+      // It establishes only as the node finishes landing on the baseline.
+      railNodes.add(
+        _HorizontalRailNodeSnapshot(
+          edgeOffset: satellitePose.edgeOffset + scaledInset,
+          width: scaledDiameter,
+          presence: _intervalProgress(satelliteProgress, start: 0.84, end: 1),
+        ),
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // Hidden nodes
+    //
+    // Entry 2+ wait until the satellite has nearly landed, then descend from
+    // above into their final horizontal slots. In LTR + side=start this builds
+    // the chain from the rating/star anchor toward the right.
+    // -----------------------------------------------------------------------
+
+    if (dockEntries.length > 2) {
+      final int hiddenCount = dockEntries.length - 2;
+
+      for (int index = dockEntries.length - 1; index >= 2; index--) {
+        final int hiddenOrdinal = index - 2;
+
+        final double attachProgress = mode == CinearaStatusDockMode.permanent
+            ? 1
+            : _horizontalHiddenAttachProgress(
+                expansion,
+                ordinal: hiddenOrdinal,
+                count: hiddenCount,
+              );
+
+        if (attachProgress <= 0.001) {
+          continue;
+        }
+
+        final double easedAttach = Curves.easeOutCubic.transform(
+          attachProgress,
+        );
+
+        final _DockNodePose pose = _horizontalSlotPose(
+          metrics,
+          dockEntries,
+          index,
+        );
+
+        railNodes.add(
+          _HorizontalRailNodeSnapshot(
+            edgeOffset: pose.edgeOffset,
+            width: metrics.widthFor(dockEntries[index]),
+            presence: _intervalProgress(attachProgress, start: 0.72, end: 1),
+          ),
+        );
+
+        hiddenNodes.add(
+          _positionNode(
+            entry: dockEntries[index],
+            pose: pose,
+
+            // Negative Y starts above the baseline; returning to 0 makes the
+            // node travel downward into the row.
+            physicalDy: -metrics.horizontalAttachmentLift * (1 - easedAttach),
+            opacity: easedAttach,
+
+            nodeSide: _horizontalNodeSignalSide,
+          ),
+        );
+      }
+    }
+
+    return SizedBox(
+      width: currentWidth,
+      height: currentHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _HorizontalPhysicalDockRailPainter(
+                nodes: railNodes,
+                side: side,
+                direction: Directionality.of(context),
+                metrics: metrics,
+                railColor: railPalette.rail,
+                pulseColor: pulseAccent,
+                pulse: pulseAnimation,
+              ),
+            ),
+          ),
+
+          ...hiddenNodes,
+
+          _positionNode(
+            entry: anchor,
+            pose: _horizontalSlotPose(metrics, dockEntries, 0),
+            isAnchor: true,
+
+            nodeSide: _horizontalNodeSignalSide,
+          ),
+
+          if (satellitePose != null)
+            _positionNode(
+              entry: dockEntries[1],
+              pose: satellitePose,
+
+              nodeSide: _horizontalNodeSignalSide,
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Horizontal structural-mutation choreography.
+  ///
+  /// This preserves the same invariant as the vertical chain:
+  ///
+  /// - removals detach before retained nodes reflow;
+  /// - retained nodes never cross one another;
+  /// - additions enter only after their final slot is vacant;
+  /// - Compact expands the old hierarchy first and collapses using the new one.
+  ///
+  /// Movement that introduces/removes a node is perpendicular to the chain so
+  /// full-size badges never slide through neighboring badges.
+  Widget _buildHorizontalExpandedMutation({
+    required BuildContext context,
+    required _DockMutationTransition transition,
+    required double progress,
+  }) {
+    final _MutationTiming timing = _MutationTiming.resolve(transition);
+
+    final List<_StatusDockEntry> widthEntries =
+        metrics.horizontalWidthFor(transition.before) >=
+            metrics.horizontalWidthFor(transition.after)
+        ? transition.before
+        : transition.after;
+
+    final double width = metrics.horizontalWidthFor(widthEntries);
+
+    final List<_HorizontalRailNodeSnapshot> railNodes =
+        <_HorizontalRailNodeSnapshot>[];
+    final List<Widget> renderedNodes = <Widget>[];
+
+    final List<CinearaStatusDockIndicator> addedOrdered = transition.after
+        .where(
+          (_StatusDockEntry entry) =>
+              transition.addedIndicators.contains(entry.indicator),
+        )
+        .map((_StatusDockEntry entry) => entry.indicator)
+        .toList(growable: false);
+
+    final List<CinearaStatusDockIndicator> removedOrdered = transition.before
+        .where(
+          (_StatusDockEntry entry) =>
+              transition.removedIndicators.contains(entry.indicator),
+        )
+        .map((_StatusDockEntry entry) => entry.indicator)
+        .toList(growable: false);
+
+    // Removed nodes leave perpendicular to the horizontal chain first.
+    for (int oldIndex = 0; oldIndex < transition.before.length; oldIndex++) {
+      final _StatusDockEntry oldEntry = transition.before[oldIndex];
+
+      if (!transition.removedIndicators.contains(oldEntry.indicator)) {
+        continue;
+      }
+
+      final int ordinal = removedOrdered.indexOf(oldEntry.indicator);
+
+      final double detachProgress = timing.detachProgress(
+        progress,
+        ordinal: ordinal,
+        count: removedOrdered.length,
+      );
+
+      if (detachProgress >= 0.999) {
+        continue;
+      }
+
+      final double easedDetach = Curves.easeInCubic.transform(detachProgress);
+
+      final _DockNodePose pose = _horizontalSlotPose(
+        metrics,
+        transition.before,
+        oldIndex,
+      );
+
+      renderedNodes.add(
+        _positionNode(
+          entry: oldEntry,
+          pose: pose,
+          physicalDy: -metrics.horizontalAttachmentLift * easedDetach,
+          opacity: 1 - easedDetach,
+
+          nodeSide: _horizontalNodeSignalSide,
+        ),
+      );
+
+      railNodes.add(
+        _HorizontalRailNodeSnapshot(
+          edgeOffset: pose.edgeOffset,
+          width: metrics.widthFor(oldEntry),
+          presence: 1 - easedDetach,
+        ),
+      );
+    }
+
+    // Retained nodes reflow horizontally only after removed slots are clear.
+    final double reflowProgress = Curves.easeInOutCubic.transform(
+      timing.reflowProgress(progress),
+    );
+
+    for (int oldIndex = 0; oldIndex < transition.before.length; oldIndex++) {
+      final _StatusDockEntry oldEntry = transition.before[oldIndex];
+
+      if (!transition.retainedIndicators.contains(oldEntry.indicator)) {
+        continue;
+      }
+
+      final int newIndex = transition.after.indexWhere(
+        (_StatusDockEntry entry) => entry.indicator == oldEntry.indicator,
+      );
+
+      if (newIndex < 0) {
+        continue;
+      }
+
+      final _StatusDockEntry newEntry = transition.after[newIndex];
+
+      final _DockNodePose pose = _lerpPose(
+        _horizontalSlotPose(metrics, transition.before, oldIndex),
+        _horizontalSlotPose(metrics, transition.after, newIndex),
+        reflowProgress,
+      );
+
+      renderedNodes.add(
+        _positionNode(
+          entry: newEntry,
+          pose: pose,
+          isAnchor: newIndex == 0 && reflowProgress >= 0.999,
+
+          nodeSide: _horizontalNodeSignalSide,
+        ),
+      );
+
+      railNodes.add(
+        _HorizontalRailNodeSnapshot(
+          edgeOffset: pose.edgeOffset,
+          width: metrics.widthFor(newEntry),
+          presence: 1,
+        ),
+      );
+    }
+
+    // New nodes settle into their already-vacant final slots.
+    for (int newIndex = 0; newIndex < transition.after.length; newIndex++) {
+      final _StatusDockEntry newEntry = transition.after[newIndex];
+
+      if (!transition.addedIndicators.contains(newEntry.indicator)) {
+        continue;
+      }
+
+      final int ordinal = addedOrdered.indexOf(newEntry.indicator);
+
+      final double attachProgress = timing.attachProgress(
+        progress,
+        ordinal: ordinal,
+        count: addedOrdered.length,
+      );
+
+      if (attachProgress <= 0.001) {
+        continue;
+      }
+
+      final double easedAttach = Curves.easeOutCubic.transform(attachProgress);
+
+      final _DockNodePose pose = _horizontalSlotPose(
+        metrics,
+        transition.after,
+        newIndex,
+      );
+
+      renderedNodes.add(
+        _positionNode(
+          entry: newEntry,
+          pose: pose,
+          physicalDy: -metrics.horizontalAttachmentLift * (1 - easedAttach),
+          opacity: easedAttach,
+          isAnchor: newIndex == 0 && attachProgress >= 0.999,
+
+          nodeSide: _horizontalNodeSignalSide,
+        ),
+      );
+
+      railNodes.add(
+        _HorizontalRailNodeSnapshot(
+          edgeOffset: pose.edgeOffset,
+          width: metrics.widthFor(newEntry),
+          presence: _intervalProgress(attachProgress, start: 0.68, end: 1),
+        ),
+      );
+    }
+
+    final int maximumCount = math
+        .max(transition.before.length, transition.after.length)
+        .toInt();
+
+    final double mutationHeight = mode == CinearaStatusDockMode.compact
+        ? metrics.horizontalCompactRestHeightFor(maximumCount)
+        : metrics.outerDiameter;
+
+    return SizedBox(
+      width: width,
+      height: mutationHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _HorizontalPhysicalDockRailPainter(
+                nodes: railNodes,
+                side: side,
+                direction: Directionality.of(context),
+                metrics: metrics,
+                railColor: railPalette.rail,
+                pulseColor: pulseAccent,
+                pulse: const AlwaysStoppedAnimation<double>(1),
+              ),
+            ),
+          ),
+          ...renderedNodes,
+        ],
+      ),
+    );
+  }
+
+  Widget _positionNode({
+    required _StatusDockEntry entry,
+    required _DockNodePose pose,
+    double physicalDx = 0,
+    double physicalDy = 0,
+    double opacity = 1,
+    bool isAnchor = false,
+    CinearaStatusDockSide? nodeSide,
+  }) {
+    Widget child = _StatusDockNode(
       entry: entry,
       variant: variant,
-      side: side,
+      side: nodeSide ?? side,
       metrics: metrics,
       highContrast: highContrast,
-      attachmentAnimation: attachmentAnimation,
-      settleAnimation: settleAnimation,
-      reactionIndex: reactionIndex,
-      reactionCount: reactionCount,
-      isAnchor: isAnchor,
       ratingAnimation: ratingAnimation,
       ratingAnimationActive: ratingAnimationActive,
       ratingAnimationFrom: ratingAnimationFrom,
       ratingAnimationTo: ratingAnimationTo,
     );
 
-    if (side == CinearaStatusDockSide.end) {
-      return PositionedDirectional(end: 0, bottom: animatedBottom, child: slot);
+    if (isAnchor) {
+      child = _StatusDockAnchorSettle(animation: settleAnimation, child: child);
     }
 
-    return PositionedDirectional(start: 0, bottom: animatedBottom, child: slot);
+    if (pose.scale != 1) {
+      child = Transform.scale(scale: pose.scale, child: child);
+    }
+
+    if (physicalDx != 0 || physicalDy != 0) {
+      child = Transform.translate(
+        offset: Offset(physicalDx, physicalDy),
+        child: child,
+      );
+    }
+
+    if (opacity < 0.999) {
+      child = Opacity(
+        opacity: opacity.clamp(0.0, 1.0).toDouble(),
+        child: child,
+      );
+    }
+
+    if (side == CinearaStatusDockSide.end) {
+      return PositionedDirectional(
+        end: pose.edgeOffset,
+        bottom: pose.bottom,
+        child: child,
+      );
+    }
+
+    return PositionedDirectional(
+      start: pose.edgeOffset,
+      bottom: pose.bottom,
+      child: child,
+    );
   }
 }
 
 // =============================================================================
-// Dock slot
+// Dynamic node
 // =============================================================================
 
-final class _StatusDockSlot extends StatelessWidget {
-  const _StatusDockSlot({
+final class _StatusDockNode extends StatelessWidget {
+  const _StatusDockNode({
     required this.entry,
     required this.variant,
     required this.side,
     required this.metrics,
     required this.highContrast,
-    required this.attachmentAnimation,
-    required this.settleAnimation,
-    required this.reactionIndex,
-    required this.reactionCount,
-    required this.isAnchor,
     required this.ratingAnimation,
     required this.ratingAnimationActive,
     required this.ratingAnimationFrom,
     required this.ratingAnimationTo,
-    super.key,
   });
 
   final _StatusDockEntry entry;
-
   final CinearaStatusDockVariant variant;
   final CinearaStatusDockSide side;
-
   final _StatusDockMetrics metrics;
-
   final bool highContrast;
 
-  final Animation<double> attachmentAnimation;
-  final Animation<double> settleAnimation;
-
-  /// -1 means this node was not part of the magnetic attachment sequence.
-  final int reactionIndex;
-
-  final int reactionCount;
-
-  final bool isAnchor;
-
   final Animation<double> ratingAnimation;
-
   final bool ratingAnimationActive;
-
   final double? ratingAnimationFrom;
   final double? ratingAnimationTo;
 
   @override
   Widget build(BuildContext context) {
-    Widget node = entry.indicator == CinearaStatusDockIndicator.rating
-        ? _StatusDockRatingNode(
-            entry: entry,
-            variant: variant,
-            side: side,
-            metrics: metrics,
-            highContrast: highContrast,
-            animation: ratingAnimation,
-            animationActive: ratingAnimationActive,
-            animationFrom: ratingAnimationFrom,
-            animationTo: ratingAnimationTo,
-          )
-        : _StatusDockBinaryNode(
-            entry: entry,
-            variant: variant,
-            metrics: metrics,
-            highContrast: highContrast,
-          );
-
-    // Only newly added nodes receive magnetic attachment.
-    //
-    // There is deliberately no:
-    //
-    // - opacity animation
-    // - FadeTransition
-    // - AnimatedOpacity
-    // - scale-in animation
-    //
-    // The badge is fully opaque and fully sized throughout attachment.
-    if (reactionIndex >= 0) {
-      node = _MagneticDockAttachment(
+    if (entry.indicator == CinearaStatusDockIndicator.rating) {
+      return _StatusDockRatingNode(
+        entry: entry,
+        variant: variant,
         side: side,
-        animation: attachmentAnimation,
-        staggerIndex: reactionIndex,
-        staggerCount: reactionCount,
-        travel: metrics.attachmentTravel,
-        child: node,
+        metrics: metrics,
+        highContrast: highContrast,
+        animation: ratingAnimation,
+        animationActive: ratingAnimationActive,
+        animationFrom: ratingAnimationFrom,
+        animationTo: ratingAnimationTo,
       );
     }
 
-    if (isAnchor) {
-      node = _StatusDockAnchorSettle(animation: settleAnimation, child: node);
-    }
-
-    return node;
-  }
-}
-
-// =============================================================================
-// Magnetic attachment
-// =============================================================================
-
-final class _MagneticDockAttachment extends StatelessWidget {
-  const _MagneticDockAttachment({
-    required this.side,
-    required this.animation,
-    required this.staggerIndex,
-    required this.staggerCount,
-    required this.travel,
-    required this.child,
-  });
-
-  final CinearaStatusDockSide side;
-
-  final Animation<double> animation;
-
-  final int staggerIndex;
-  final int staggerCount;
-
-  final double travel;
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final TextDirection direction = Directionality.of(context);
-
-    final double inwardSign = _physicalInwardSign(
-      side: side,
-      direction: direction,
-    );
-
-    return AnimatedBuilder(
-      animation: animation,
-      child: child,
-      builder: (BuildContext context, Widget? child) {
-        final double progress = _staggeredProgress(
-          animation.value,
-          index: staggerIndex,
-          count: staggerCount,
-        );
-
-        final double movement = _lerp(
-          travel,
-          0,
-          Curves.easeOutCubic.transform(progress),
-        );
-
-        return Transform.translate(
-          offset: Offset(movement * inwardSign, 0),
-          child: child,
-        );
-      },
+    return _StatusDockBinaryNode(
+      entry: entry,
+      variant: variant,
+      metrics: metrics,
+      highContrast: highContrast,
     );
   }
 }
@@ -2108,7 +2473,6 @@ final class _StatusDockAnchorSettle extends StatelessWidget {
   const _StatusDockAnchorSettle({required this.animation, required this.child});
 
   final Animation<double> animation;
-
   final Widget child;
 
   @override
@@ -2119,9 +2483,10 @@ final class _StatusDockAnchorSettle extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         final double progress = animation.value.clamp(0.0, 1.0).toDouble();
 
-        final double scale = _anchorSettleScale(progress);
-
-        return Transform.scale(scale: scale, child: child);
+        return Transform.scale(
+          scale: _anchorSettleScale(progress),
+          child: child,
+        );
       },
     );
   }
@@ -2140,11 +2505,8 @@ final class _StatusDockBinaryNode extends StatelessWidget {
   });
 
   final _StatusDockEntry entry;
-
   final CinearaStatusDockVariant variant;
-
   final _StatusDockMetrics metrics;
-
   final bool highContrast;
 
   @override
@@ -2226,13 +2588,11 @@ final class _StatusDockRatingNode extends StatelessWidget {
   final CinearaStatusDockSide side;
 
   final _StatusDockMetrics metrics;
-
   final bool highContrast;
 
   final Animation<double> animation;
 
   final bool animationActive;
-
   final double? animationFrom;
   final double? animationTo;
 
@@ -2355,7 +2715,6 @@ final class _StatusDockRatingNode extends StatelessWidget {
 
   String _resolveDisplayedRating({required String finalValue}) {
     final double? from = animationFrom;
-
     final double? to = animationTo;
 
     if (!animationActive || from == null || to == null || from == to) {
@@ -2366,108 +2725,547 @@ final class _StatusDockRatingNode extends StatelessWidget {
       animation.value.clamp(0.0, 1.0).toDouble(),
     );
 
-    final double current = _lerp(from, to, progress);
-
-    return _formatAnimatedRating(current);
+    return _formatAnimatedRating(_lerp(from, to, progress));
   }
 }
 
 // =============================================================================
-// Rail painter
+// Physical rail
 // =============================================================================
 
-final class _StatusDockRailPainter extends CustomPainter {
-  _StatusDockRailPainter({
-    required Listenable repaint,
-    required this.count,
+@immutable
+final class _RailNodeSnapshot {
+  const _RailNodeSnapshot({
+    required this.bottom,
+    required this.diameter,
+    required this.presence,
+  });
+
+  final double bottom;
+  final double diameter;
+  final double presence;
+}
+
+/// Draws only physically valid shell-to-shell rail segments.
+///
+/// A segment is never drawn across an empty structural slot. This prevents an
+/// orphan line from appearing before a newly added badge reaches the chain.
+final class _PhysicalDockRailPainter extends CustomPainter {
+  _PhysicalDockRailPainter({
+    required this.nodes,
     required this.side,
     required this.metrics,
     required this.railColor,
     required this.pulseColor,
     required this.pulse,
-    required this.expansionProgress,
-  }) : super(repaint: repaint);
+  }) : super(repaint: pulse);
 
-  final int count;
-
+  final List<_RailNodeSnapshot> nodes;
   final CinearaStatusDockSide side;
-
   final _StatusDockMetrics metrics;
 
   final Color railColor;
   final Color pulseColor;
-
   final Animation<double> pulse;
-
-  final double expansionProgress;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (count <= 1 || expansionProgress <= 0.001) {
+    if (nodes.length <= 1) {
       return;
     }
 
+    final List<_RailNodeSnapshot> ordered = <_RailNodeSnapshot>[...nodes]
+      ..sort(
+        (_RailNodeSnapshot a, _RailNodeSnapshot b) =>
+            a.bottom.compareTo(b.bottom),
+      );
+
     final double railX = side == CinearaStatusDockSide.end
-        ? size.width - (metrics.outerDiameter / 2)
+        ? size.width - metrics.outerDiameter / 2
         : metrics.outerDiameter / 2;
-
-    final double anchorY = size.height - (metrics.outerDiameter / 2);
-
-    final double furthestY =
-        anchorY - ((count - 1) * metrics.nodeExtent * expansionProgress);
 
     final Paint railPaint = Paint()
       ..color = railColor
       ..strokeWidth = metrics.railWidth
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawLine(
-      Offset(railX, anchorY),
-      Offset(railX, furthestY),
-      railPaint,
-    );
+    for (int index = 0; index < ordered.length - 1; index++) {
+      final _RailNodeSnapshot lower = ordered[index];
+      final _RailNodeSnapshot upper = ordered[index + 1];
+
+      final double presence = math
+          .min(lower.presence, upper.presence)
+          .clamp(0.0, 1.0)
+          .toDouble();
+
+      if (presence <= 0.001) {
+        continue;
+      }
+
+      final double lowerCenterY =
+          size.height - lower.bottom - metrics.outerDiameter / 2;
+      final double upperCenterY =
+          size.height - upper.bottom - metrics.outerDiameter / 2;
+
+      final double centerDistance = lowerCenterY - upperCenterY;
+
+      // Never bridge a deliberately vacant chain slot.
+      if (centerDistance > metrics.nodeExtent * 1.45) {
+        continue;
+      }
+
+      final double startY = lowerCenterY - lower.diameter / 2;
+      final double targetEndY = upperCenterY + upper.diameter / 2;
+
+      if (startY <= targetEndY) {
+        continue;
+      }
+
+      final double endY = _lerp(
+        startY,
+        targetEndY,
+        Curves.easeOutCubic.transform(presence),
+      );
+
+      canvas.drawLine(Offset(railX, startY), Offset(railX, endY), railPaint);
+    }
 
     final double pulseProgress = pulse.value.clamp(0.0, 1.0).toDouble();
+    final double pulseOpacity = math.sin(math.pi * pulseProgress);
 
-    final double opacity = math.sin(math.pi * pulseProgress);
-
-    if (opacity <= 0.001) {
+    if (pulseOpacity <= 0.001) {
       return;
     }
 
-    final double pulseY = _lerp(anchorY, furthestY, pulseProgress);
+    final List<_RailNodeSnapshot> established = ordered
+        .where((_RailNodeSnapshot node) => node.presence >= 0.98)
+        .toList(growable: false);
+
+    if (established.length <= 1) {
+      return;
+    }
+
+    final _RailNodeSnapshot lowest = established.first;
+    final _RailNodeSnapshot highest = established.last;
+
+    final double lowestCenterY =
+        size.height - lowest.bottom - metrics.outerDiameter / 2;
+    final double highestCenterY =
+        size.height - highest.bottom - metrics.outerDiameter / 2;
+
+    final double startY = lowestCenterY - lowest.diameter / 2;
+    final double endY = highestCenterY + highest.diameter / 2;
+
+    if (startY <= endY) {
+      return;
+    }
+
+    final double pulseCenterY = _lerp(startY, endY, pulseProgress);
 
     final double halfLength = metrics.pulseLength / 2;
 
-    final double top = math.min(anchorY, furthestY);
-
-    final double bottom = math.max(anchorY, furthestY);
-
-    final double pulseStart = math.max(top, pulseY - halfLength);
-
-    final double pulseEnd = math.min(bottom, pulseY + halfLength);
-
     final Paint pulsePaint = Paint()
-      ..color = pulseColor.withValues(alpha: opacity.clamp(0.0, 1.0).toDouble())
+      ..color = pulseColor.withValues(
+        alpha: pulseOpacity.clamp(0.0, 1.0).toDouble(),
+      )
       ..strokeWidth = metrics.pulseWidth
       ..strokeCap = StrokeCap.round;
 
     canvas.drawLine(
-      Offset(railX, pulseStart),
-      Offset(railX, pulseEnd),
+      Offset(railX, math.min(startY, pulseCenterY + halfLength)),
+      Offset(railX, math.max(endY, pulseCenterY - halfLength)),
       pulsePaint,
     );
   }
 
   @override
-  bool shouldRepaint(_StatusDockRailPainter oldDelegate) {
-    return oldDelegate.count != count ||
+  bool shouldRepaint(_PhysicalDockRailPainter oldDelegate) {
+    return oldDelegate.nodes != nodes ||
         oldDelegate.side != side ||
         oldDelegate.metrics != metrics ||
         oldDelegate.railColor != railColor ||
         oldDelegate.pulseColor != pulseColor ||
-        oldDelegate.pulse != pulse ||
-        oldDelegate.expansionProgress != expansionProgress;
+        oldDelegate.pulse != pulse;
+  }
+}
+
+// =============================================================================
+// Horizontal physical rail
+// =============================================================================
+
+@immutable
+final class _HorizontalRailNodeSnapshot {
+  const _HorizontalRailNodeSnapshot({
+    required this.edgeOffset,
+    required this.width,
+    required this.presence,
+  });
+
+  /// Logical distance from the dock's anchored side.
+  final double edgeOffset;
+
+  /// Visible shell width. Rating nodes are wider than circular nodes and the
+  /// Compact satellite uses its scaled visible diameter here.
+  final double width;
+
+  final double presence;
+}
+
+/// Inline-axis counterpart of [_PhysicalDockRailPainter].
+///
+/// It draws only shell-to-shell segments between physically adjacent visible
+/// nodes. The rail therefore never bridges an intentionally vacant slot during
+/// a structural mutation.
+final class _HorizontalPhysicalDockRailPainter extends CustomPainter {
+  _HorizontalPhysicalDockRailPainter({
+    required this.nodes,
+    required this.side,
+    required this.direction,
+    required this.metrics,
+    required this.railColor,
+    required this.pulseColor,
+    required this.pulse,
+  }) : super(repaint: pulse);
+
+  final List<_HorizontalRailNodeSnapshot> nodes;
+  final CinearaStatusDockSide side;
+  final TextDirection direction;
+  final _StatusDockMetrics metrics;
+
+  final Color railColor;
+  final Color pulseColor;
+  final Animation<double> pulse;
+
+  bool get _anchoredOnPhysicalLeft {
+    return (side == CinearaStatusDockSide.start &&
+            direction == TextDirection.ltr) ||
+        (side == CinearaStatusDockSide.end && direction == TextDirection.rtl);
+  }
+
+  double _physicalLeft(_HorizontalRailNodeSnapshot node, double totalWidth) {
+    if (_anchoredOnPhysicalLeft) {
+      return node.edgeOffset;
+    }
+
+    return totalWidth - node.edgeOffset - node.width;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (nodes.length <= 1) {
+      return;
+    }
+
+    final List<_HorizontalRailNodeSnapshot> ordered =
+        <_HorizontalRailNodeSnapshot>[...nodes]..sort(
+          (_HorizontalRailNodeSnapshot a, _HorizontalRailNodeSnapshot b) =>
+              a.edgeOffset.compareTo(b.edgeOffset),
+        );
+
+    final double railY = size.height - (metrics.outerDiameter / 2);
+
+    final Paint railPaint = Paint()
+      ..color = railColor
+      ..strokeWidth = metrics.railWidth
+      ..strokeCap = StrokeCap.round;
+
+    for (int index = 0; index < ordered.length - 1; index++) {
+      final _HorizontalRailNodeSnapshot near = ordered[index];
+      final _HorizontalRailNodeSnapshot far = ordered[index + 1];
+
+      final double presence = math
+          .min(near.presence, far.presence)
+          .clamp(0.0, 1.0)
+          .toDouble();
+
+      if (presence <= 0.001) {
+        continue;
+      }
+
+      final double nearLeft = _physicalLeft(near, size.width);
+      final double farLeft = _physicalLeft(far, size.width);
+
+      final double startX = _anchoredOnPhysicalLeft
+          ? nearLeft + near.width
+          : nearLeft;
+
+      final double targetEndX = _anchoredOnPhysicalLeft
+          ? farLeft
+          : farLeft + far.width;
+
+      final double shellGap = (targetEndX - startX).abs();
+
+      // Do not bridge a vacant canonical slot during reflow/mutation.
+      if (shellGap > math.max(8, metrics.horizontalNodeGap * 1.8)) {
+        continue;
+      }
+
+      if (shellGap <= 0.001) {
+        continue;
+      }
+
+      final double endX = _lerp(
+        startX,
+        targetEndX,
+        Curves.easeOutCubic.transform(presence),
+      );
+
+      canvas.drawLine(Offset(startX, railY), Offset(endX, railY), railPaint);
+    }
+
+    final double pulseProgress = pulse.value.clamp(0.0, 1.0).toDouble();
+    final double pulseOpacity = math.sin(math.pi * pulseProgress);
+
+    if (pulseOpacity <= 0.001) {
+      return;
+    }
+
+    final List<_HorizontalRailNodeSnapshot> established = ordered
+        .where((_HorizontalRailNodeSnapshot node) => node.presence >= 0.98)
+        .toList(growable: false);
+
+    if (established.length <= 1) {
+      return;
+    }
+
+    final _HorizontalRailNodeSnapshot first = established.first;
+    final _HorizontalRailNodeSnapshot last = established.last;
+
+    final double firstLeft = _physicalLeft(first, size.width);
+    final double lastLeft = _physicalLeft(last, size.width);
+
+    final double chainStartX = _anchoredOnPhysicalLeft
+        ? firstLeft + first.width
+        : firstLeft;
+
+    final double chainEndX = _anchoredOnPhysicalLeft
+        ? lastLeft
+        : lastLeft + last.width;
+
+    if ((chainEndX - chainStartX).abs() <= 0.001) {
+      return;
+    }
+
+    final double normalizedHalfLength =
+        (metrics.pulseLength / (chainEndX - chainStartX).abs()) / 2;
+
+    final double startT = (pulseProgress - normalizedHalfLength)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final double endT = (pulseProgress + normalizedHalfLength)
+        .clamp(0.0, 1.0)
+        .toDouble();
+
+    final Paint pulsePaint = Paint()
+      ..color = pulseColor.withValues(
+        alpha: pulseOpacity.clamp(0.0, 1.0).toDouble(),
+      )
+      ..strokeWidth = metrics.pulseWidth
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawLine(
+      Offset(_lerp(chainStartX, chainEndX, startT), railY),
+      Offset(_lerp(chainStartX, chainEndX, endT), railY),
+      pulsePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HorizontalPhysicalDockRailPainter oldDelegate) {
+    return oldDelegate.nodes != nodes ||
+        oldDelegate.side != side ||
+        oldDelegate.direction != direction ||
+        oldDelegate.metrics != metrics ||
+        oldDelegate.railColor != railColor ||
+        oldDelegate.pulseColor != pulseColor ||
+        oldDelegate.pulse != pulse;
+  }
+}
+
+// =============================================================================
+// Mutation model
+// =============================================================================
+
+@immutable
+final class _DockMutationTransition {
+  const _DockMutationTransition({required this.before, required this.after});
+
+  final List<_StatusDockEntry> before;
+  final List<_StatusDockEntry> after;
+
+  Set<CinearaStatusDockIndicator> get beforeIndicators =>
+      before.map((_StatusDockEntry entry) => entry.indicator).toSet();
+
+  Set<CinearaStatusDockIndicator> get afterIndicators =>
+      after.map((_StatusDockEntry entry) => entry.indicator).toSet();
+
+  Set<CinearaStatusDockIndicator> get addedIndicators =>
+      afterIndicators.difference(beforeIndicators);
+
+  Set<CinearaStatusDockIndicator> get removedIndicators =>
+      beforeIndicators.difference(afterIndicators);
+
+  Set<CinearaStatusDockIndicator> get retainedIndicators =>
+      beforeIndicators.intersection(afterIndicators);
+
+  bool get hasStructuralChange =>
+      addedIndicators.isNotEmpty || removedIndicators.isNotEmpty;
+
+  bool get requiresRetainedReflow {
+    for (final CinearaStatusDockIndicator indicator in retainedIndicators) {
+      final int oldIndex = before.indexWhere(
+        (_StatusDockEntry entry) => entry.indicator == indicator,
+      );
+      final int newIndex = after.indexWhere(
+        (_StatusDockEntry entry) => entry.indicator == indicator,
+      );
+
+      if (oldIndex != newIndex) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  Duration get mutationDuration {
+    final bool hasAdds = addedIndicators.isNotEmpty;
+    final bool hasRemovals = removedIndicators.isNotEmpty;
+
+    if (hasAdds && hasRemovals) {
+      return const Duration(milliseconds: 640);
+    }
+
+    if (hasAdds) {
+      return const Duration(milliseconds: 540);
+    }
+
+    return const Duration(milliseconds: 480);
+  }
+}
+
+@immutable
+final class _MutationTiming {
+  const _MutationTiming({
+    required this.detachStart,
+    required this.detachEnd,
+    required this.reflowStart,
+    required this.reflowEnd,
+    required this.attachStart,
+    required this.attachEnd,
+  });
+
+  final double detachStart;
+  final double detachEnd;
+
+  final double reflowStart;
+  final double reflowEnd;
+
+  final double attachStart;
+  final double attachEnd;
+
+  factory _MutationTiming.resolve(_DockMutationTransition transition) {
+    final bool hasAdds = transition.addedIndicators.isNotEmpty;
+    final bool hasRemovals = transition.removedIndicators.isNotEmpty;
+
+    if (hasAdds && hasRemovals) {
+      return const _MutationTiming(
+        detachStart: 0.00,
+        detachEnd: 0.28,
+        reflowStart: 0.28,
+        reflowEnd: 0.58,
+        attachStart: 0.58,
+        attachEnd: 0.94,
+      );
+    }
+
+    if (hasRemovals) {
+      if (!transition.requiresRetainedReflow) {
+        return const _MutationTiming(
+          detachStart: 0.00,
+          detachEnd: 0.46,
+          reflowStart: 1.00,
+          reflowEnd: 1.00,
+          attachStart: 1.00,
+          attachEnd: 1.00,
+        );
+      }
+
+      return const _MutationTiming(
+        detachStart: 0.00,
+        detachEnd: 0.36,
+        reflowStart: 0.36,
+        reflowEnd: 0.86,
+        attachStart: 1.00,
+        attachEnd: 1.00,
+      );
+    }
+
+    if (!transition.requiresRetainedReflow) {
+      return const _MutationTiming(
+        detachStart: 0.00,
+        detachEnd: 0.00,
+        reflowStart: 0.00,
+        reflowEnd: 0.00,
+        attachStart: 0.00,
+        attachEnd: 0.72,
+      );
+    }
+
+    return const _MutationTiming(
+      detachStart: 0.00,
+      detachEnd: 0.00,
+      reflowStart: 0.00,
+      reflowEnd: 0.44,
+      attachStart: 0.44,
+      attachEnd: 0.88,
+    );
+  }
+
+  double detachProgress(
+    double progress, {
+    required int ordinal,
+    required int count,
+  }) {
+    if (detachEnd <= detachStart || count <= 0) {
+      return 1;
+    }
+
+    final double stagger = count <= 1 ? 0 : ordinal * 0.035;
+
+    return _intervalProgress(
+      progress,
+      start: (detachStart + stagger).clamp(0.0, detachEnd - 0.04).toDouble(),
+      end: detachEnd,
+    );
+  }
+
+  double reflowProgress(double progress) {
+    if (reflowEnd <= reflowStart) {
+      return 1;
+    }
+
+    return _intervalProgress(progress, start: reflowStart, end: reflowEnd);
+  }
+
+  double attachProgress(
+    double progress, {
+    required int ordinal,
+    required int count,
+  }) {
+    if (attachEnd <= attachStart || count <= 0) {
+      return 0;
+    }
+
+    final double stagger = count <= 1 ? 0 : ordinal * 0.055;
+
+    return _intervalProgress(
+      progress,
+      start: (attachStart + stagger)
+          .clamp(attachStart, attachEnd - 0.06)
+          .toDouble(),
+      end: attachEnd,
+    );
   }
 }
 
@@ -2486,14 +3284,82 @@ final class _StatusDockEntry {
   });
 
   final CinearaStatusDockIndicator indicator;
-
   final String semanticLabel;
-
   final Color accent;
-
   final IconData icon;
-
   final String? value;
+}
+
+// =============================================================================
+// Node pose
+// =============================================================================
+
+@immutable
+final class _DockNodePose {
+  const _DockNodePose({
+    required this.edgeOffset,
+    required this.bottom,
+    required this.scale,
+  });
+
+  factory _DockNodePose.anchor() {
+    return const _DockNodePose(edgeOffset: 0, bottom: 0, scale: 1);
+  }
+
+  final double edgeOffset;
+  final double bottom;
+  final double scale;
+}
+
+_DockNodePose _expandedSlotPose(_StatusDockMetrics metrics, int index) {
+  return _DockNodePose(
+    edgeOffset: 0,
+    bottom: index * metrics.nodeExtent,
+    scale: 1,
+  );
+}
+
+_DockNodePose _compactSatellitePose(_StatusDockMetrics metrics) {
+  return _DockNodePose(
+    edgeOffset: -metrics.satelliteHorizontalShift,
+    bottom: metrics.satelliteVerticalShift,
+    scale: metrics.satelliteScale,
+  );
+}
+
+_DockNodePose _horizontalSlotPose(
+  _StatusDockMetrics metrics,
+  List<_StatusDockEntry> entries,
+  int index,
+) {
+  return _DockNodePose(
+    edgeOffset: metrics.horizontalOffsetFor(entries, index),
+    bottom: 0,
+    scale: 1,
+  );
+}
+
+_DockNodePose _horizontalPerchedSatellitePose(
+  _StatusDockMetrics metrics,
+  _StatusDockEntry anchor,
+) {
+  return _DockNodePose(
+    edgeOffset: metrics.horizontalPerchedSatelliteOffsetFor(anchor),
+    bottom: metrics.satelliteVerticalShift,
+    scale: metrics.satelliteScale,
+  );
+}
+
+_DockNodePose _lerpPose(
+  _DockNodePose start,
+  _DockNodePose end,
+  double progress,
+) {
+  return _DockNodePose(
+    edgeOffset: _lerp(start.edgeOffset, end.edgeOffset, progress),
+    bottom: _lerp(start.bottom, end.bottom, progress),
+    scale: _lerp(start.scale, end.scale, progress),
+  );
 }
 
 // =============================================================================
@@ -2520,56 +3386,144 @@ final class _StatusDockMetrics {
     required this.highContrastOuterBorderWidth,
   });
 
-  /// Complete circular-node diameter.
   final double outerDiameter;
-
-  /// Semantic inner-circle diameter.
   final double innerDiameter;
 
-  /// Width of the personal-rating pill.
   final double ratingWidth;
 
-  /// Glyph size inside semantic circles.
   final double iconSize;
-
-  /// Personal-rating number size.
   final double ratingFontSize;
 
-  /// Inward padding around rating text.
   final double ratingTextPadding;
-
-  /// Optical vertical offset for rating text.
   final double ratingTextVerticalOffset;
-
-  /// Horizontal space between rating number and semantic circle.
   final double ratingSignalGap;
-
-  /// Optical vertical correction for the rating star.
   final double ratingIconVerticalOffset;
 
-  /// Vertical space between expanded nodes.
   final double nodeGap;
 
-  /// Resting rail width.
   final double railWidth;
-
-  /// State-addition pulse width.
   final double pulseWidth;
-
-  /// Travelling state-addition pulse length.
   final double pulseLength;
 
-  /// Horizontal distance used by magnetic state attachment.
   final double attachmentTravel;
-
-  /// Accessibility outline used only in high-contrast mode.
   final double highContrastOuterBorderWidth;
 
-  /// Equal physical inset around the semantic circle.
   double get innerInset => (outerDiameter - innerDiameter) / 2;
 
-  /// Distance from the centre of one expanded node to the next.
   double get nodeExtent => outerDiameter + nodeGap;
+
+  // ---------------------------------------------------------------------------
+  // Horizontal list geometry
+  // ---------------------------------------------------------------------------
+
+  /// Horizontal full-chain spacing deliberately matches the vertical chain's
+  /// shell-to-shell gap so both layouts feel like the same component.
+  double get horizontalNodeGap => nodeGap;
+
+  /// Small perpendicular travel used when hidden list nodes attach/detach.
+  double get horizontalAttachmentLift => attachmentTravel * 0.72;
+
+  /// Horizontal Compact reuses the vertical satellite scale and lift. Only
+  /// the inline offset changes so it perches over the anchor's trailing corner.
+  double horizontalOffsetFor(List<_StatusDockEntry> entries, int index) {
+    if (index <= 0) {
+      return 0;
+    }
+
+    double offset = 0;
+
+    for (int current = 0; current < index; current++) {
+      offset += widthFor(entries[current]);
+      offset += horizontalNodeGap;
+    }
+
+    return offset;
+  }
+
+  double horizontalWidthFor(List<_StatusDockEntry> entries) {
+    if (entries.isEmpty) {
+      return 0;
+    }
+
+    double width = 0;
+
+    for (int index = 0; index < entries.length; index++) {
+      if (index > 0) {
+        width += horizontalNodeGap;
+      }
+
+      width += widthFor(entries[index]);
+    }
+
+    return width;
+  }
+
+  /// Layout-box offset for the perched Horizontal Compact satellite.
+  ///
+  /// In the normal LTR Search/List configuration (`side: start`) this places
+  /// the small satellite over the upper-right corner of the expansion-facing
+  /// signal. For a Rating anchor that signal is the star at the right end of
+  /// `[9.2 ★]`, matching the vertical Compact dock's rest composition.
+  double horizontalPerchedSatelliteOffsetFor(_StatusDockEntry anchor) {
+    return widthFor(anchor) - outerDiameter + satelliteHorizontalShift;
+  }
+
+  double horizontalCompactRestWidthFor(List<_StatusDockEntry> entries) {
+    if (entries.isEmpty) {
+      return 0;
+    }
+
+    final double anchorWidth = widthFor(entries.first);
+
+    if (entries.length == 1) {
+      return anchorWidth;
+    }
+
+    final double satelliteOffset = horizontalPerchedSatelliteOffsetFor(
+      entries.first,
+    );
+    final double scaledDiameter = outerDiameter * satelliteScale;
+    final double scaledInset = (outerDiameter - scaledDiameter) / 2;
+
+    final double satelliteVisualEnd =
+        satelliteOffset + scaledInset + scaledDiameter;
+
+    return math.max(anchorWidth, satelliteVisualEnd).toDouble();
+  }
+
+  /// Vertical extent needed by Horizontal Compact while its satellite is
+  /// perched above the anchor. This intentionally matches the ordinary compact
+  /// dock's resting silhouette.
+  double horizontalCompactRestHeightFor(int count) {
+    return compactRestHeightFor(count);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compact satellite geometry
+  // ---------------------------------------------------------------------------
+
+  /// Resting satellite size relative to an ordinary circular node.
+  double get satelliteScale => 0.60;
+
+  /// Pushes the resting satellite toward the trailing corner so the semantic
+  /// cores remain readable while the outer shells still feel connected.
+  double get satelliteHorizontalShift => outerDiameter * 0.45;
+
+  /// Raises the satellite enough to produce the deliberate compact overlap.
+  double get satelliteVerticalShift => outerDiameter * 0.40;
+
+  double compactRestHeightFor(int count) {
+    if (count <= 1) {
+      return outerDiameter;
+    }
+
+    final double satelliteVisualTop =
+        satelliteVerticalShift +
+        outerDiameter / 2 +
+        outerDiameter * satelliteScale / 2;
+
+    return math.max(outerDiameter, satelliteVisualTop).toDouble();
+  }
 
   double widthFor(_StatusDockEntry entry) {
     return entry.indicator == CinearaStatusDockIndicator.rating
@@ -2721,12 +3675,9 @@ final class _StatusDockNodePalette {
   });
 
   final Color accent;
-
   final Color onAccent;
 
   final Color outerSurface;
-
-  /// Used only when high-contrast mode requests an explicit outline.
   final Color outerOutline;
 
   final Color foreground;
@@ -2805,8 +3756,20 @@ final class _StatusDockRailPalette {
 // Helpers
 // =============================================================================
 
-/// Returns the physical direction from the rail toward the interior of the
-/// containing card.
+bool _mediaStructureChanged(CinearaStatusDock before, CinearaStatusDock after) {
+  return before.favorite != after.favorite ||
+      before.collection != after.collection ||
+      before.watchlist != after.watchlist ||
+      (before.personalRating == null) != (after.personalRating == null);
+}
+
+bool _sameIndicatorSet(
+  Set<CinearaStatusDockIndicator> first,
+  Set<CinearaStatusDockIndicator> second,
+) {
+  return first.length == second.length && first.containsAll(second);
+}
+
 double _physicalInwardSign({
   required CinearaStatusDockSide side,
   required TextDirection direction,
@@ -2818,48 +3781,72 @@ double _physicalInwardSign({
   return railOnPhysicalRight ? -1 : 1;
 }
 
+double _magneticDx({
+  required BuildContext context,
+  required CinearaStatusDockSide side,
+  required double travel,
+}) {
+  return _physicalInwardSign(
+        side: side,
+        direction: Directionality.of(context),
+      ) *
+      travel;
+}
+
+double _horizontalHiddenAttachProgress(
+  double expansion, {
+  required int ordinal,
+  required int count,
+}) {
+  if (count <= 0) {
+    return 0;
+  }
+
+  // The real satellite drops to the baseline first. Entry 2+ then descend
+  // into their own already-vacant horizontal slots to continue the chain.
+  final double start = (0.38 + ordinal * 0.10).clamp(0.38, 0.66).toDouble();
+  final double end = (0.72 + ordinal * 0.09).clamp(0.72, 0.96).toDouble();
+
+  return _intervalProgress(expansion, start: start, end: end);
+}
+
+double _presentationHiddenAttachProgress(
+  double expansion, {
+  required int ordinal,
+  required int count,
+}) {
+  if (count <= 0) {
+    return 0;
+  }
+
+  final double start = (0.32 + ordinal * 0.10).clamp(0.32, 0.62).toDouble();
+
+  final double end = (0.68 + ordinal * 0.10).clamp(0.68, 0.94).toDouble();
+
+  return _intervalProgress(expansion, start: start, end: end);
+}
+
 double _lerp(double start, double end, double progress) {
   return start + ((end - start) * progress);
 }
 
-/// Default final personal-rating formatter.
-///
-/// ```text
-/// 8.0 -> 8
-/// 8.5 -> 8.5
-/// ```
 String _formatRating(double value) {
-  if (value == value.roundToDouble()) {
-    return value.toStringAsFixed(0);
-  }
-
   return value.toStringAsFixed(1);
 }
 
-/// Quantizes an in-flight numerical rating to one decimal place.
 String _formatAnimatedRating(double value) {
   final double stepped = (value * 10).round() / 10;
-
   return _formatRating(stepped);
 }
 
-/// Converts one shared attachment controller into a small stagger for multiple
-/// newly added nodes.
-///
-/// Existing nodes are never included, so they do not replay an entrance
-/// animation when another indicator is added.
-double _staggeredProgress(
+double _intervalProgress(
   double progress, {
-  required int index,
-  required int count,
+  required double start,
+  required double end,
 }) {
-  if (count <= 1) {
-    return progress.clamp(0.0, 1.0).toDouble();
+  if (end <= start) {
+    return progress >= end ? 1 : 0;
   }
-
-  final double start = (index * 0.10).clamp(0.0, 0.30).toDouble();
-
-  final double end = math.min(1.0, start + 0.70).toDouble();
 
   if (progress <= start) {
     return 0;
@@ -2872,22 +3859,20 @@ double _staggeredProgress(
   return ((progress - start) / (end - start)).clamp(0.0, 1.0).toDouble();
 }
 
-/// Small mechanical compression/overshoot after non-anchor indicators return
-/// into the compact anchor.
+/// Tiny mechanical settle at the end of Compact collapse.
+///
+/// This is intentionally restrained. The dock should feel magnetic, not
+/// spring-loaded.
 double _anchorSettleScale(double progress) {
-  if (progress <= 0.32) {
-    final double local = progress / 0.32;
+  final double t = progress.clamp(0.0, 1.0).toDouble();
 
-    return _lerp(1, 0.94, Curves.easeOutCubic.transform(local));
+  if (t <= 0.42) {
+    final double local = (t / 0.42).clamp(0.0, 1.0).toDouble();
+
+    return _lerp(1, 0.975, Curves.easeOutCubic.transform(local));
   }
 
-  if (progress <= 0.68) {
-    final double local = (progress - 0.32) / 0.36;
+  final double local = ((t - 0.42) / 0.58).clamp(0.0, 1.0).toDouble();
 
-    return _lerp(0.94, 1.035, Curves.easeOutCubic.transform(local));
-  }
-
-  final double local = (progress - 0.68) / 0.32;
-
-  return _lerp(1.035, 1, Curves.easeOutCubic.transform(local));
+  return _lerp(0.975, 1, Curves.easeOutCubic.transform(local));
 }
