@@ -7,46 +7,93 @@ import 'package:flutter/rendering.dart';
 // Horizontal media rail
 // =============================================================================
 
-/// Horizontally scrollable Cineara rail for arbitrary media presentation
-/// widgets.
+/// Edge-to-edge cinematic horizontal rail for Cineara.
 ///
 /// The rail is deliberately data-agnostic. It can host
-/// [CinearaMediaGridItem] or another feature-specific tile without knowing
-/// anything about the underlying media/domain model.
+/// [CinearaMediaGridItem], people tiles, collection tiles, or any other widget
+/// without knowing anything about the underlying feature/domain model.
 ///
-/// When [snapToCenter] is enabled, interior items settle onto the viewport's
-/// horizontal center after scrolling stops. By default the first and last items
-/// do not center-snap:
+/// ## Cineara edge behavior
 ///
-/// - the first item keeps the natural leading-edge composition;
-/// - the last item can finish flush with the trailing viewport edge without
-///   requiring synthetic trailing blank space.
+/// The rail viewport itself should be allowed to reach the physical screen
+/// edges by the page layout. Inside that viewport:
 ///
-/// Center targets are calculated through Flutter's [RenderAbstractViewport],
-/// so the final offset is based on the actual rendered item and viewport rather
-/// than hand-written index arithmetic.
+/// - the first and last posters receive the same small 12 dp logical inset;
+/// - only an edge with hidden scrollable content beyond it receives a fade;
+/// - that fade grows gradually with the amount of content hidden beyond it;
+/// - the physical beginning never fades on its outside edge;
+/// - the physical end never fades on its outside edge;
+/// - the fade is a background-colored opacity veil, not a ShaderMask or
+///   BackdropFilter, so there is no hard vertical filter boundary;
+/// - first and last items do not center-snap by default;
+/// - interior snapping is intentionally soft and distance-aware.
+///
+/// At the initial scroll position in LTR:
+///
+/// ```text
+/// [ first ] [ ... ] [ partially visible ... fade ]
+/// ^ clean                                     ^ fade
+/// ```
+///
+/// In the middle:
+///
+/// ```text
+/// [ fade ... ] [ cards ] [ ... fade ]
+/// ```
+///
+/// At the natural end:
+///
+/// ```text
+/// [ fade ... ] [ ... ] [ last ]
+///                              ^ clean
+/// ```
+///
+/// RTL is handled using the scroll position's physical [AxisDirection].
+///
+/// ## Full-width requirement
+///
+/// `padding` belongs to the scroll content, not the outer rail viewport. This
+/// widget cannot escape horizontal padding imposed by its parent. If the rail
+/// must reach the actual device edges, place it outside the page's normal
+/// horizontal content gutter and pad the section title/header separately.
 final class CinearaMediaHorizontalRail extends StatefulWidget {
   const CinearaMediaHorizontalRail({
     required this.children,
     required this.itemWidth,
     super.key,
-    this.spacing = 18,
-    this.padding = EdgeInsets.zero,
+    this.spacing = 16,
+    this.padding = const EdgeInsetsDirectional.only(start: 12, end: 12),
     this.controller,
     this.physics,
     this.clipBehavior = Clip.hardEdge,
     this.snapToCenter = false,
     this.snapFirstItem = false,
     this.snapLastItem = false,
-    this.snapDuration = const Duration(milliseconds: 320),
+    this.snapDuration = const Duration(milliseconds: 440),
     this.snapCurve = Curves.easeInOutSine,
+    this.minimumSnapDistance = 4,
+    this.edgeFadeWidth = 36,
+    this.edgeFadeRevealDistance = 72,
+    this.edgeFadeColor,
+    this.showOverscrollIndicator = false,
+    this.showScrollbar = false,
   }) : assert(itemWidth > 0, 'itemWidth must be greater than zero.'),
        assert(spacing >= 0, 'spacing must not be negative.'),
        assert(
          snapDuration >= Duration.zero,
          'snapDuration must not be negative.',
+       ),
+       assert(
+         minimumSnapDistance >= 0,
+         'minimumSnapDistance must not be negative.',
+       ),
+       assert(edgeFadeWidth >= 0, 'edgeFadeWidth must not be negative.'),
+       assert(
+         edgeFadeRevealDistance > 0,
+         'edgeFadeRevealDistance must be greater than zero.',
        );
 
+  /// Widgets displayed by the rail.
   final List<Widget> children;
 
   /// Fixed width assigned to every child.
@@ -55,35 +102,62 @@ final class CinearaMediaHorizontalRail extends StatefulWidget {
   /// Logical gap between adjacent children.
   final double spacing;
 
+  /// Logical start/end padding inside the scroll content.
+  ///
+  /// The default is symmetrical so the first and final poster have the same
+  /// breathing room.
   final EdgeInsetsGeometry padding;
 
   /// Optional externally owned controller.
   ///
-  /// If omitted, the rail owns an internal controller.
+  /// If omitted, the rail creates and owns an internal controller.
   final ScrollController? controller;
 
   final ScrollPhysics? physics;
   final Clip clipBehavior;
 
-  /// Whether the nearest eligible item should settle onto the horizontal
-  /// viewport center when user scrolling ends.
+  /// Whether the nearest eligible interior item softly settles toward the
+  /// horizontal viewport center after scrolling finishes.
   final bool snapToCenter;
 
-  /// Whether item 0 is allowed to center-snap.
-  ///
-  /// Cineara rails normally leave this false so the initial composition starts
-  /// cleanly on the section's leading edge.
+  /// Whether the first item may center-snap.
   final bool snapFirstItem;
 
-  /// Whether the final item is allowed to center-snap.
-  ///
-  /// Cineara rails normally leave this false. This removes the need for a large
-  /// trailing spacer and lets the last card finish naturally at the viewport
-  /// edge.
+  /// Whether the final item may center-snap.
   final bool snapLastItem;
 
+  /// Maximum duration of the soft snap correction.
   final Duration snapDuration;
+
+  /// Curve used for the soft snap correction.
   final Curve snapCurve;
+
+  /// Snap corrections smaller than this many logical pixels are ignored.
+  final double minimumSnapDistance;
+
+  /// Width of the physical-edge continuation fade.
+  ///
+  /// The fade is only visible when scrollable content exists beyond that
+  /// physical edge.
+  final double edgeFadeWidth;
+
+  /// Scroll distance over which an edge fade grows from fully absent to
+  /// fully visible.
+  ///
+  /// This makes the continuation treatment follow the user's gesture instead
+  /// of suddenly appearing after a binary threshold.
+  final double edgeFadeRevealDistance;
+
+  /// Optional color the rail fades into.
+  ///
+  /// Defaults to [ThemeData.scaffoldBackgroundColor].
+  final Color? edgeFadeColor;
+
+  /// Whether platform overscroll chrome should remain visible.
+  final bool showOverscrollIndicator;
+
+  /// Whether platform scrollbars should remain visible.
+  final bool showScrollbar;
 
   @override
   State<CinearaMediaHorizontalRail> createState() =>
@@ -102,8 +176,15 @@ final class _CinearaMediaHorizontalRailState
   bool _snapping = false;
   bool _snapScheduled = false;
 
+  double _leftFadeStrength = 0;
+  double _rightFadeStrength = 0;
+
   static const double _edgeTolerance = 2;
-  static const double _minimumSnapDistance = 3;
+  static const int _minimumSnapDurationMs = 300;
+
+  // ===========================================================================
+  // Lifecycle
+  // ===========================================================================
 
   @override
   void initState() {
@@ -111,6 +192,7 @@ final class _CinearaMediaHorizontalRailState
 
     _configureController();
     _synchronizeItemKeys();
+    _scheduleEdgeStateUpdate();
   }
 
   @override
@@ -118,6 +200,8 @@ final class _CinearaMediaHorizontalRailState
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.controller != widget.controller) {
+      _detachController();
+
       if (_ownsController) {
         _controller.dispose();
       }
@@ -128,10 +212,20 @@ final class _CinearaMediaHorizontalRailState
     if (oldWidget.children.length != widget.children.length) {
       _synchronizeItemKeys();
     }
+
+    if (oldWidget.children.length != widget.children.length ||
+        oldWidget.itemWidth != widget.itemWidth ||
+        oldWidget.spacing != widget.spacing ||
+        oldWidget.padding != widget.padding ||
+        oldWidget.edgeFadeWidth != widget.edgeFadeWidth) {
+      _scheduleEdgeStateUpdate();
+    }
   }
 
   @override
   void dispose() {
+    _detachController();
+
     if (_ownsController) {
       _controller.dispose();
     }
@@ -139,18 +233,31 @@ final class _CinearaMediaHorizontalRailState
     super.dispose();
   }
 
+  // ===========================================================================
+  // Controller ownership
+  // ===========================================================================
+
   void _configureController() {
     final ScrollController? external = widget.controller;
 
     if (external != null) {
       _controller = external;
       _ownsController = false;
-      return;
+    } else {
+      _controller = ScrollController();
+      _ownsController = true;
     }
 
-    _controller = ScrollController();
-    _ownsController = true;
+    _controller.addListener(_handleControllerScroll);
   }
+
+  void _detachController() {
+    _controller.removeListener(_handleControllerScroll);
+  }
+
+  // ===========================================================================
+  // Stable item render targets
+  // ===========================================================================
 
   void _synchronizeItemKeys() {
     final int targetLength = widget.children.length;
@@ -161,19 +268,191 @@ final class _CinearaMediaHorizontalRailState
 
     final List<GlobalKey> previous = _itemKeys;
 
-    _itemKeys = List<GlobalKey>.generate(
-      targetLength,
-      (int index) => index < previous.length
-          ? previous[index]
-          : GlobalKey(debugLabel: 'cineara-media-rail-item-$index'),
-      growable: false,
+    _itemKeys = List<GlobalKey>.generate(targetLength, (int index) {
+      if (index < previous.length) {
+        return previous[index];
+      }
+
+      return GlobalKey(debugLabel: 'cineara-media-horizontal-rail-item-$index');
+    }, growable: false);
+  }
+
+  // ===========================================================================
+  // Dynamic continuation fade
+  // ===========================================================================
+
+  void _handleControllerScroll() {
+    _updateEdgeFadeState();
+  }
+
+  void _scheduleEdgeStateUpdate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _updateEdgeFadeState();
+      }
+    });
+  }
+
+  void _updateEdgeFadeState() {
+    if (!mounted || !_controller.hasClients || widget.edgeFadeWidth <= 0) {
+      _setEdgeFadeStrength(left: 0, right: 0);
+      return;
+    }
+
+    final ScrollPosition position = _controller.position;
+
+    final double beforeStrength = _fadeStrengthForExtent(position.extentBefore);
+
+    final double afterStrength = _fadeStrengthForExtent(position.extentAfter);
+
+    final double leftStrength;
+    final double rightStrength;
+
+    // extentBefore / extentAfter are logical along the scroll axis.
+    // Convert them to physical left/right edges so RTL behaves correctly.
+    switch (position.axisDirection) {
+      case AxisDirection.right:
+        leftStrength = beforeStrength;
+        rightStrength = afterStrength;
+        break;
+
+      case AxisDirection.left:
+        leftStrength = afterStrength;
+        rightStrength = beforeStrength;
+        break;
+
+      case AxisDirection.up:
+      case AxisDirection.down:
+        leftStrength = 0;
+        rightStrength = 0;
+        break;
+    }
+
+    _setEdgeFadeStrength(left: leftStrength, right: rightStrength);
+  }
+
+  double _fadeStrengthForExtent(double extent) {
+    if (extent <= _edgeTolerance) {
+      return 0;
+    }
+
+    final double normalized = (extent / widget.edgeFadeRevealDistance)
+        .clamp(0.0, 1.0)
+        .toDouble();
+
+    // Smoothstep: gradual at both ends, with no abrupt "on" moment.
+    return normalized * normalized * (3 - (2 * normalized));
+  }
+
+  void _setEdgeFadeStrength({required double left, required double right}) {
+    if ((_leftFadeStrength - left).abs() < 0.001 &&
+        (_rightFadeStrength - right).abs() < 0.001) {
+      return;
+    }
+
+    setState(() {
+      _leftFadeStrength = left;
+      _rightFadeStrength = right;
+    });
+  }
+
+  Widget _buildEdgeFade({
+    required BuildContext context,
+    required bool left,
+    required double strength,
+  }) {
+    if (strength <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final Color color =
+        widget.edgeFadeColor ?? Theme.of(context).scaffoldBackgroundColor;
+
+    final Alignment begin = left ? Alignment.centerLeft : Alignment.centerRight;
+
+    final Alignment end = left ? Alignment.centerRight : Alignment.centerLeft;
+
+    return IgnorePointer(
+      child: Opacity(
+        opacity: strength.clamp(0.0, 1.0).toDouble(),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: begin,
+              end: end,
+              colors: <Color>[
+                color,
+                color.withAlpha(244),
+                color.withAlpha(212),
+                color.withAlpha(156),
+                color.withAlpha(88),
+                color.withAlpha(32),
+                color.withAlpha(0),
+              ],
+              stops: const <double>[0, 0.12, 0.28, 0.48, 0.68, 0.86, 1],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
+  Widget _buildCinematicViewport({
+    required BuildContext context,
+    required Widget child,
+  }) {
+    if (widget.edgeFadeWidth <= 0) {
+      return child;
+    }
+
+    return Stack(
+      fit: StackFit.passthrough,
+      clipBehavior: Clip.hardEdge,
+      children: <Widget>[
+        child,
+
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: widget.edgeFadeWidth,
+          child: _buildEdgeFade(
+            context: context,
+            left: true,
+            strength: _leftFadeStrength,
+          ),
+        ),
+
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: widget.edgeFadeWidth,
+          child: _buildEdgeFade(
+            context: context,
+            left: false,
+            strength: _rightFadeStrength,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Scroll / snapping
+  // ===========================================================================
+
   bool _handleScrollNotification(ScrollNotification notification) {
-    if (!widget.snapToCenter ||
-        _snapping ||
-        notification.metrics.axis != Axis.horizontal) {
+    if (notification.metrics.axis != Axis.horizontal) {
+      return false;
+    }
+
+    if (notification is ScrollMetricsNotification) {
+      _scheduleEdgeStateUpdate();
+      return false;
+    }
+
+    if (!widget.snapToCenter || _snapping) {
       return false;
     }
 
@@ -194,11 +473,9 @@ final class _CinearaMediaHorizontalRailState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _snapScheduled = false;
 
-      if (!mounted) {
-        return;
+      if (mounted) {
+        unawaited(_snapNearestEligibleItemToCenter());
       }
-
-      unawaited(_snapNearestEligibleItemToCenter());
     });
   }
 
@@ -226,7 +503,7 @@ final class _CinearaMediaHorizontalRailState
 
     final ScrollPosition position = _controller.position;
 
-    // Keep the rail completely natural at its physical beginning/end.
+    // The first and final physical positions remain natural.
     if (!widget.snapFirstItem &&
         position.pixels <= position.minScrollExtent + _edgeTolerance) {
       return;
@@ -287,14 +564,6 @@ final class _CinearaMediaHorizontalRailState
       return;
     }
 
-    // If the user deliberately reached the natural trailing end, do not pull
-    // the rail back to the penultimate item. The last card should remain flush
-    // at the edge rather than creating an empty end-cap.
-    if (!widget.snapLastItem &&
-        (position.maxScrollExtent - position.pixels).abs() < _edgeTolerance) {
-      return;
-    }
-
     final RenderAbstractViewport viewport = RenderAbstractViewport.of(
       nearestItem,
     );
@@ -310,7 +579,7 @@ final class _CinearaMediaHorizontalRailState
 
     final double snapDistance = (target - position.pixels).abs();
 
-    if (snapDistance < _minimumSnapDistance) {
+    if (snapDistance < widget.minimumSnapDistance) {
       return;
     }
 
@@ -325,18 +594,20 @@ final class _CinearaMediaHorizontalRailState
       if (reduceMotion || widget.snapDuration == Duration.zero) {
         _controller.jumpTo(target);
       } else {
-        // Small corrections finish sooner; larger ones use the full soft
-        // settle. This reads more like magnetic alignment than a second scroll.
         final double stride = widget.itemWidth + widget.spacing;
+
         final double distanceFraction = stride <= 0
             ? 1
             : (snapDistance / stride).clamp(0.0, 1.0).toDouble();
 
-        final int durationMs =
-            (210 +
-                    ((widget.snapDuration.inMilliseconds - 210) *
-                        distanceFraction))
-                .round();
+        final int maximumDurationMs = widget.snapDuration.inMilliseconds;
+
+        final int durationMs = maximumDurationMs <= _minimumSnapDurationMs
+            ? maximumDurationMs
+            : (_minimumSnapDurationMs +
+                      ((maximumDurationMs - _minimumSnapDurationMs) *
+                          distanceFraction))
+                  .round();
 
         await _controller.animateTo(
           target,
@@ -347,9 +618,35 @@ final class _CinearaMediaHorizontalRailState
     } finally {
       if (mounted) {
         _snapping = false;
+        _updateEdgeFadeState();
       }
     }
   }
+
+  // ===========================================================================
+  // Scroll chrome
+  // ===========================================================================
+
+  bool _handleOverscrollIndicator(
+    OverscrollIndicatorNotification notification,
+  ) {
+    if (!widget.showOverscrollIndicator) {
+      notification.disallowIndicator();
+    }
+
+    return false;
+  }
+
+  ScrollBehavior _scrollBehavior(BuildContext context) {
+    return ScrollConfiguration.of(context).copyWith(
+      scrollbars: widget.showScrollbar,
+      overscroll: widget.showOverscrollIndicator,
+    );
+  }
+
+  // ===========================================================================
+  // Build
+  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -357,38 +654,44 @@ final class _CinearaMediaHorizontalRailState
       return const SizedBox.shrink();
     }
 
-    return SizedBox(
-      key: _viewportKey,
-      child: NotificationListener<ScrollNotification>(
-        onNotification: _handleScrollNotification,
-        child: SingleChildScrollView(
-          controller: _controller,
-          scrollDirection: Axis.horizontal,
-          physics: widget.physics,
-          clipBehavior: widget.clipBehavior,
-          padding: widget.padding,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              for (
-                int index = 0;
-                index < widget.children.length;
-                index++
-              ) ...<Widget>[
-                KeyedSubtree(
-                  key: _itemKeys[index],
-                  child: SizedBox(
-                    width: widget.itemWidth,
-                    child: widget.children[index],
+    final Widget scrollView = ScrollConfiguration(
+      behavior: _scrollBehavior(context),
+      child: NotificationListener<OverscrollIndicatorNotification>(
+        onNotification: _handleOverscrollIndicator,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: SingleChildScrollView(
+            key: _viewportKey,
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            physics: widget.physics,
+            clipBehavior: widget.clipBehavior,
+            padding: widget.padding,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                for (
+                  int index = 0;
+                  index < widget.children.length;
+                  index++
+                ) ...<Widget>[
+                  KeyedSubtree(
+                    key: _itemKeys[index],
+                    child: SizedBox(
+                      width: widget.itemWidth,
+                      child: widget.children[index],
+                    ),
                   ),
-                ),
-                if (index < widget.children.length - 1)
-                  SizedBox(width: widget.spacing),
+                  if (index < widget.children.length - 1)
+                    SizedBox(width: widget.spacing),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
     );
+
+    return _buildCinematicViewport(context: context, child: scrollView);
   }
 }
