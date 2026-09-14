@@ -29,6 +29,8 @@ export 'components/navigation/top_app_bar/notification_app_bar_action.dart';
 export 'components/navigation/top_app_bar/profile_app_bar_action.dart';
 export 'components/navigation/top_app_bar/top_app_bar.dart';
 export 'components/navigation/top_app_bar/top_app_bar_icon_action.dart';
+export 'components/people/person_grid_item.dart';
+export 'components/people/person_list_item.dart';
 export 'components/surfaces/surface.dart'; // Shapes
 export 'shapes/cineara_shapes.dart';
 export 'themes/app_theme.dart';

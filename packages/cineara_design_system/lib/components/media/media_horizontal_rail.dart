@@ -1,7 +1,4 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 
 // =============================================================================
 // Horizontal media rail
@@ -25,8 +22,8 @@ import 'package:flutter/rendering.dart';
 /// - the physical end never fades on its outside edge;
 /// - the fade is a background-colored opacity veil, not a ShaderMask or
 ///   BackdropFilter, so there is no hard vertical filter boundary;
-/// - first and last items do not center-snap by default;
-/// - interior snapping is intentionally soft and distance-aware.
+/// - scrolling is deliberately free and continuous;
+/// - releasing a gesture never triggers an automatic position correction.
 ///
 /// At the initial scroll position in LTR:
 ///
@@ -66,12 +63,6 @@ final class CinearaMediaHorizontalRail extends StatefulWidget {
     this.controller,
     this.physics,
     this.clipBehavior = Clip.hardEdge,
-    this.snapToCenter = false,
-    this.snapFirstItem = false,
-    this.snapLastItem = false,
-    this.snapDuration = const Duration(milliseconds: 440),
-    this.snapCurve = Curves.easeInOutSine,
-    this.minimumSnapDistance = 4,
     this.edgeFadeWidth = 36,
     this.edgeFadeRevealDistance = 72,
     this.edgeFadeColor,
@@ -79,14 +70,6 @@ final class CinearaMediaHorizontalRail extends StatefulWidget {
     this.showScrollbar = false,
   }) : assert(itemWidth > 0, 'itemWidth must be greater than zero.'),
        assert(spacing >= 0, 'spacing must not be negative.'),
-       assert(
-         snapDuration >= Duration.zero,
-         'snapDuration must not be negative.',
-       ),
-       assert(
-         minimumSnapDistance >= 0,
-         'minimumSnapDistance must not be negative.',
-       ),
        assert(edgeFadeWidth >= 0, 'edgeFadeWidth must not be negative.'),
        assert(
          edgeFadeRevealDistance > 0,
@@ -115,25 +98,6 @@ final class CinearaMediaHorizontalRail extends StatefulWidget {
 
   final ScrollPhysics? physics;
   final Clip clipBehavior;
-
-  /// Whether the nearest eligible interior item softly settles toward the
-  /// horizontal viewport center after scrolling finishes.
-  final bool snapToCenter;
-
-  /// Whether the first item may center-snap.
-  final bool snapFirstItem;
-
-  /// Whether the final item may center-snap.
-  final bool snapLastItem;
-
-  /// Maximum duration of the soft snap correction.
-  final Duration snapDuration;
-
-  /// Curve used for the soft snap correction.
-  final Curve snapCurve;
-
-  /// Snap corrections smaller than this many logical pixels are ignored.
-  final double minimumSnapDistance;
 
   /// Width of the physical-edge continuation fade.
   ///
@@ -166,21 +130,13 @@ final class CinearaMediaHorizontalRail extends StatefulWidget {
 
 final class _CinearaMediaHorizontalRailState
     extends State<CinearaMediaHorizontalRail> {
-  final GlobalKey _viewportKey = GlobalKey();
-
   late ScrollController _controller;
   late bool _ownsController;
-
-  List<GlobalKey> _itemKeys = <GlobalKey>[];
-
-  bool _snapping = false;
-  bool _snapScheduled = false;
 
   double _leftFadeStrength = 0;
   double _rightFadeStrength = 0;
 
   static const double _edgeTolerance = 2;
-  static const int _minimumSnapDurationMs = 300;
 
   // ===========================================================================
   // Lifecycle
@@ -191,7 +147,6 @@ final class _CinearaMediaHorizontalRailState
     super.initState();
 
     _configureController();
-    _synchronizeItemKeys();
     _scheduleEdgeStateUpdate();
   }
 
@@ -207,10 +162,6 @@ final class _CinearaMediaHorizontalRailState
       }
 
       _configureController();
-    }
-
-    if (oldWidget.children.length != widget.children.length) {
-      _synchronizeItemKeys();
     }
 
     if (oldWidget.children.length != widget.children.length ||
@@ -253,28 +204,6 @@ final class _CinearaMediaHorizontalRailState
 
   void _detachController() {
     _controller.removeListener(_handleControllerScroll);
-  }
-
-  // ===========================================================================
-  // Stable item render targets
-  // ===========================================================================
-
-  void _synchronizeItemKeys() {
-    final int targetLength = widget.children.length;
-
-    if (_itemKeys.length == targetLength) {
-      return;
-    }
-
-    final List<GlobalKey> previous = _itemKeys;
-
-    _itemKeys = List<GlobalKey>.generate(targetLength, (int index) {
-      if (index < previous.length) {
-        return previous[index];
-      }
-
-      return GlobalKey(debugLabel: 'cineara-media-horizontal-rail-item-$index');
-    }, growable: false);
   }
 
   // ===========================================================================
@@ -439,7 +368,7 @@ final class _CinearaMediaHorizontalRailState
   }
 
   // ===========================================================================
-  // Scroll / snapping
+  // Scroll notifications
   // ===========================================================================
 
   bool _handleScrollNotification(ScrollNotification notification) {
@@ -447,180 +376,16 @@ final class _CinearaMediaHorizontalRailState
       return false;
     }
 
+    // A metrics change can happen after layout, viewport resizing, content
+    // changes, or a physics update. Re-evaluate the continuation fades on the
+    // next frame once the new scroll extents are stable.
     if (notification is ScrollMetricsNotification) {
       _scheduleEdgeStateUpdate();
-      return false;
     }
 
-    if (!widget.snapToCenter || _snapping) {
-      return false;
-    }
-
-    if (notification is ScrollEndNotification) {
-      _scheduleSnap();
-    }
-
+    // Cineara rails intentionally free-scroll. ScrollEndNotification does not
+    // trigger any automatic correction or centering.
     return false;
-  }
-
-  void _scheduleSnap() {
-    if (_snapScheduled || _snapping || !mounted) {
-      return;
-    }
-
-    _snapScheduled = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _snapScheduled = false;
-
-      if (mounted) {
-        unawaited(_snapNearestEligibleItemToCenter());
-      }
-    });
-  }
-
-  Future<void> _snapNearestEligibleItemToCenter() async {
-    if (!mounted ||
-        _snapping ||
-        !_controller.hasClients ||
-        widget.children.length < 2) {
-      return;
-    }
-
-    final BuildContext? viewportContext = _viewportKey.currentContext;
-
-    if (viewportContext == null) {
-      return;
-    }
-
-    final RenderObject? viewportObject = viewportContext.findRenderObject();
-
-    if (viewportObject is! RenderBox ||
-        !viewportObject.attached ||
-        !viewportObject.hasSize) {
-      return;
-    }
-
-    final ScrollPosition position = _controller.position;
-
-    // The first and final physical positions remain natural.
-    if (!widget.snapFirstItem &&
-        position.pixels <= position.minScrollExtent + _edgeTolerance) {
-      return;
-    }
-
-    if (!widget.snapLastItem &&
-        position.pixels >= position.maxScrollExtent - _edgeTolerance) {
-      return;
-    }
-
-    final Offset viewportCenter = viewportObject.localToGlobal(
-      Offset(viewportObject.size.width / 2, viewportObject.size.height / 2),
-    );
-
-    int? nearestIndex;
-    RenderBox? nearestItem;
-    double nearestDistance = double.infinity;
-
-    for (int index = 0; index < _itemKeys.length; index++) {
-      final BuildContext? itemContext = _itemKeys[index].currentContext;
-
-      if (itemContext == null) {
-        continue;
-      }
-
-      final RenderObject? itemObject = itemContext.findRenderObject();
-
-      if (itemObject is! RenderBox ||
-          !itemObject.attached ||
-          !itemObject.hasSize) {
-        continue;
-      }
-
-      final Offset itemCenter = itemObject.localToGlobal(
-        Offset(itemObject.size.width / 2, itemObject.size.height / 2),
-      );
-
-      final double distance = (itemCenter.dx - viewportCenter.dx).abs();
-
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestIndex = index;
-        nearestItem = itemObject;
-      }
-    }
-
-    if (nearestIndex == null || nearestItem == null) {
-      return;
-    }
-
-    if (nearestIndex == 0 && !widget.snapFirstItem) {
-      return;
-    }
-
-    final int lastIndex = widget.children.length - 1;
-
-    if (nearestIndex == lastIndex && !widget.snapLastItem) {
-      return;
-    }
-
-    final RenderAbstractViewport viewport = RenderAbstractViewport.of(
-      nearestItem,
-    );
-
-    final RevealedOffset revealed = viewport.getOffsetToReveal(
-      nearestItem,
-      0.5,
-    );
-
-    final double target = revealed.offset
-        .clamp(position.minScrollExtent, position.maxScrollExtent)
-        .toDouble();
-
-    final double snapDistance = (target - position.pixels).abs();
-
-    if (snapDistance < widget.minimumSnapDistance) {
-      return;
-    }
-
-    final MediaQueryData mediaQuery = MediaQuery.of(context);
-
-    final bool reduceMotion =
-        mediaQuery.disableAnimations || mediaQuery.accessibleNavigation;
-
-    _snapping = true;
-
-    try {
-      if (reduceMotion || widget.snapDuration == Duration.zero) {
-        _controller.jumpTo(target);
-      } else {
-        final double stride = widget.itemWidth + widget.spacing;
-
-        final double distanceFraction = stride <= 0
-            ? 1
-            : (snapDistance / stride).clamp(0.0, 1.0).toDouble();
-
-        final int maximumDurationMs = widget.snapDuration.inMilliseconds;
-
-        final int durationMs = maximumDurationMs <= _minimumSnapDurationMs
-            ? maximumDurationMs
-            : (_minimumSnapDurationMs +
-                      ((maximumDurationMs - _minimumSnapDurationMs) *
-                          distanceFraction))
-                  .round();
-
-        await _controller.animateTo(
-          target,
-          duration: Duration(milliseconds: durationMs),
-          curve: widget.snapCurve,
-        );
-      }
-    } finally {
-      if (mounted) {
-        _snapping = false;
-        _updateEdgeFadeState();
-      }
-    }
   }
 
   // ===========================================================================
@@ -661,7 +426,6 @@ final class _CinearaMediaHorizontalRailState
         child: NotificationListener<ScrollNotification>(
           onNotification: _handleScrollNotification,
           child: SingleChildScrollView(
-            key: _viewportKey,
             controller: _controller,
             scrollDirection: Axis.horizontal,
             physics: widget.physics,
@@ -675,12 +439,9 @@ final class _CinearaMediaHorizontalRailState
                   index < widget.children.length;
                   index++
                 ) ...<Widget>[
-                  KeyedSubtree(
-                    key: _itemKeys[index],
-                    child: SizedBox(
-                      width: widget.itemWidth,
-                      child: widget.children[index],
-                    ),
+                  SizedBox(
+                    width: widget.itemWidth,
+                    child: widget.children[index],
                   ),
                   if (index < widget.children.length - 1)
                     SizedBox(width: widget.spacing),

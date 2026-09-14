@@ -27,6 +27,12 @@ import 'media_status_dock.dart';
 /// descriptor · year
 /// ```
 ///
+/// Only the poster is interactive.
+///
+/// The title and metadata are deliberately passive so tapping, hovering, or
+/// focusing them does not produce a visual interaction highlight or a second
+/// navigation target.
+///
 /// Poster interaction remains owned by [CinearaMediaPoster]. The application
 /// owns navigation, quick actions, media state, localization, and the concrete
 /// overlay widgets passed to this component.
@@ -43,7 +49,6 @@ final class CinearaMediaGridItem extends StatelessWidget {
     this.statusDock,
     this.progressIndicator,
     this.onPosterLongPress,
-    this.onMetadataTap,
     this.semanticHint,
     this.heroTag,
     this.heroTransitionOnUserGestures = false,
@@ -61,14 +66,11 @@ final class CinearaMediaGridItem extends StatelessWidget {
   final CinearaStatusDock? statusDock;
   final CinearaMediaProgressIndicator? progressIndicator;
 
+  /// Opens the media destination from the poster.
   final VoidCallback onPosterTap;
-  final VoidCallback? onPosterLongPress;
 
-  /// Optional interaction for the title/metadata block.
-  ///
-  /// Search will normally pass the same destination callback as [onPosterTap].
-  /// Keeping this separate preserves the preview's poster-vs-metadata ownership.
-  final VoidCallback? onMetadataTap;
+  /// Opens media quick actions from a poster long press.
+  final VoidCallback? onPosterLongPress;
 
   /// Localized poster interaction hint.
   final String? semanticHint;
@@ -83,12 +85,6 @@ final class CinearaMediaGridItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget metadata = CinearaMediaMetadata.grid(
-      title: title,
-      descriptor: descriptor,
-      year: year,
-    );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -108,20 +104,14 @@ final class CinearaMediaGridItem extends StatelessWidget {
           ),
         ),
         SizedBox(height: metadataTopGap),
-        if (onMetadataTap case final VoidCallback callback)
-          InkWell(
-            onTap: callback,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: metadata,
-            ),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: metadata,
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: CinearaMediaMetadata.grid(
+            title: title,
+            descriptor: descriptor,
+            year: year,
           ),
+        ),
       ],
     );
   }

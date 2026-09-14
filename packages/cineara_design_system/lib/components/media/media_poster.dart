@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../tokens/elevation.dart';
 import '../../tokens/radius.dart';
 import 'media_poster_overlay.dart';
 
@@ -25,6 +26,7 @@ import 'media_poster_overlay.dart';
 /// - tap-to-open interaction;
 /// - long-press quick-action interaction;
 /// - tactile poster-surface motion;
+/// - subtle shared Cineara artwork elevation;
 /// - keyboard activation;
 /// - accessibility semantics;
 /// - an optional artwork-only Hero transition.
@@ -67,6 +69,35 @@ import 'media_poster_overlay.dart';
 ///
 /// Passive overlay metadata, such as an external rating or viewing progress,
 /// deliberately remains part of the poster surface.
+///
+/// ## Optical depth
+///
+/// At rest, the poster uses [CinearaElevation.artworkShadows] plus the shared
+/// Cineara artwork rim so it sits slightly above the surrounding page without
+/// turning the complete media item into an elevated card.
+///
+/// During pointer interaction, the existing press controller also tightens the
+/// artwork shadow:
+///
+/// ```text
+/// rest
+/// → subtle contact + ambient lift
+///
+/// pointer down
+/// → shadow begins to contract
+///
+/// tap confirmation
+/// → shadow tightens further
+///
+/// confirmed hold
+/// → artwork approaches the underlying surface
+///
+/// release
+/// → shadow returns smoothly with the existing press animation
+/// ```
+///
+/// Reduced-motion mode keeps the resting artwork elevation static rather than
+/// animating depth.
 ///
 /// ## Tap choreography
 ///
@@ -158,6 +189,10 @@ import 'media_poster_overlay.dart';
 /// ## Clipping
 ///
 /// Artwork is clipped to [borderRadius].
+///
+/// The optical shadow is painted outside the artwork clip so it remains
+/// visible. The subtle artwork rim is painted as a foreground decoration around
+/// the clipped artwork.
 ///
 /// The poster overlay itself is deliberately not clipped. Expandable status and
 /// dock components may need to paint outside their compact geometry.
@@ -548,12 +583,29 @@ final class _CinearaMediaPosterState extends State<CinearaMediaPoster>
             builder: (BuildContext context, Widget? child) {
               final double progress = _pressController.value;
 
+              // Keep optical depth static in reduced-motion mode. Otherwise the
+              // same controller that owns compression/travel also contracts the
+              // artwork shadow, so no second animation system is introduced.
+              final double depthProgress = _reduceMotion ? 0 : progress;
+
+              final List<BoxShadow> artworkShadows =
+                  CinearaElevation.artworkShadows(
+                    context,
+                    interactionProgress: depthProgress,
+                  );
+
               return Transform.translate(
                 offset: Offset(0, _resolveVerticalTravel(progress)),
                 child: Transform.scale(
                   scale: _resolveScale(progress),
                   alignment: Alignment.center,
-                  child: child,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: widget.borderRadius,
+                      boxShadow: artworkShadows,
+                    ),
+                    child: child,
+                  ),
                 ),
               );
             },
@@ -743,6 +795,8 @@ final class _CinearaMediaPosterState extends State<CinearaMediaPoster>
       child: SizedBox.expand(child: widget.artwork),
     );
 
+    // Clip only the actual artwork. The optical shadow is owned by the outer
+    // press builder and therefore remains outside this clipping boundary.
     artwork = ClipRRect(
       borderRadius: widget.borderRadius,
       clipBehavior: widget.clipBehavior,
@@ -763,7 +817,19 @@ final class _CinearaMediaPosterState extends State<CinearaMediaPoster>
       );
     }
 
-    return artwork;
+    // Keep the shared-element transition artwork-only. The subtle physical rim
+    // stays with the poster frame instead of becoming temporary Hero UI.
+    return DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        borderRadius: widget.borderRadius,
+        border: Border.all(
+          color: CinearaElevation.artworkRimColor(context),
+          width: CinearaElevation.artworkRimWidth(context),
+        ),
+      ),
+      child: artwork,
+    );
   }
 
   // ===========================================================================

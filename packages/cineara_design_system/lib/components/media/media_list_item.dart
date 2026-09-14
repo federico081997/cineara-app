@@ -6,11 +6,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../tokens/elevation.dart';
 import '../../tokens/radius.dart';
 import '../badges/external_rating_badge.dart';
 import '../badges/status_badge.dart';
 import 'media_metadata.dart';
-import 'media_poster.dart';
 import 'media_poster_overlay.dart';
 import 'media_progress_indicator.dart';
 import 'media_status_dock.dart';
@@ -32,24 +32,35 @@ import 'media_status_dock.dart';
 /// ```text
 /// rest
 /// → cardless editorial row
+/// → poster sits slightly above the page through shared artwork elevation
 ///
 /// pointer down
 /// → raw artwork zooms inside a fixed poster frame
+/// → poster shadow contracts toward the surface
 /// → one restrained full-row pressure surface appears
 ///
 /// tap confirmation
 /// → row pressure deepens slightly
+/// → poster shadow tightens further
 /// → chevron moves toward destination and blends to primary
 ///
 /// confirmed hold
 /// → light haptic
 /// → artwork reaches 1.030 zoom
+/// → artwork elevation approaches the underlying surface
 /// → deeper full-row held treatment
 /// → quick-action callback
 /// ```
 ///
 /// The poster frame, rating, progress, metadata, lifecycle state, personal dock,
 /// and row geometry never scale or translate.
+///
+/// Only the raw artwork zooms. The poster's optical depth changes independently
+/// through [CinearaElevation.artworkShadows].
+///
+/// The progress indicator is painted above the artwork rim so the progress edge
+/// visually owns the physical bottom boundary instead of exposing a second rim
+/// line beneath it.
 ///
 /// Accessibility text may make the row taller than the poster. The poster stays
 /// top-aligned and the chevron remains anchored to the poster's vertical center.
@@ -911,6 +922,12 @@ final class _CinearaMediaListItemState extends State<CinearaMediaListItem>
                                 externalRatingBadge: widget.externalRatingBadge,
                                 progressIndicator: widget.progressIndicator,
                                 artworkZoom: _resolveArtworkZoom(pressProgress),
+
+                                // The row keeps geometry fixed. Only optical
+                                // depth contracts with the row interaction.
+                                interactionProgress: _reducedMotion
+                                    ? 0
+                                    : pressProgress,
                               ),
                             ),
                             const SizedBox(
@@ -1003,41 +1020,114 @@ final class _CinearaMediaListItemState extends State<CinearaMediaListItem>
 // Poster interaction visual
 // =============================================================================
 
+/// Fixed List poster frame.
+///
+/// Unlike Grid/rail posters, the List row owns the gesture choreography. This
+/// visual therefore does not use [CinearaMediaPoster]: doing so would create an
+/// independent poster interaction/elevation controller that could not follow
+/// the row's press progress.
+///
+/// Instead this fixed frame directly reuses Cineara's shared:
+///
+/// - 2:3 geometry;
+/// - `CinearaRadii.md` poster radius;
+/// - [CinearaElevation.artworkShadows];
+/// - artwork rim;
+/// - [CinearaMediaPosterOverlay].
+///
+/// The raw artwork may zoom internally, but the frame, rim, external rating and
+/// progress indicator remain physically fixed.
 final class _ListInteractivePosterVisual extends StatelessWidget {
   const _ListInteractivePosterVisual({
     required this.artwork,
     required this.externalRatingBadge,
     required this.progressIndicator,
     required this.artworkZoom,
+    required this.interactionProgress,
   });
+
+  static const BorderRadius _borderRadius = BorderRadius.all(
+    Radius.circular(CinearaRadii.md),
+  );
 
   final Widget artwork;
   final CinearaExternalRatingBadge? externalRatingBadge;
   final CinearaMediaProgressIndicator? progressIndicator;
+
+  /// Raw artwork zoom inside the fixed poster frame.
   final double artworkZoom;
+
+  /// Row interaction depth in the range `0..1`.
+  ///
+  /// Reduced-motion mode passes zero so optical elevation remains static.
+  final double interactionProgress;
 
   @override
   Widget build(BuildContext context) {
-    return CinearaMediaPoster(
-      artwork: _ListPosterArtwork(
-        artwork: artwork,
-        externalRatingBadge: externalRatingBadge,
-        artworkZoom: artworkZoom,
-      ),
+    final ColorScheme colors = Theme.of(context).colorScheme;
 
-      // Complete row owns gestures and semantics.
-      semanticLabel: null,
-      semanticHint: null,
-      onTap: null,
-      onLongPress: null,
+    return AspectRatio(
+      aspectRatio: 2 / 3,
+      child: DecoratedBox(
+        // Shadow lives outside every artwork clip.
+        decoration: BoxDecoration(
+          borderRadius: _borderRadius,
+          boxShadow: CinearaElevation.artworkShadows(
+            context,
+            interactionProgress: interactionProgress,
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            // -----------------------------------------------------------------
+            // Fixed artwork frame
+            //
+            // The rim is a foreground decoration so artwork cannot cover it.
+            // -----------------------------------------------------------------
+            Positioned.fill(
+              child: DecoratedBox(
+                position: DecorationPosition.foreground,
+                decoration: BoxDecoration(
+                  borderRadius: _borderRadius,
+                  border: Border.all(
+                    color: CinearaElevation.artworkRimColor(context),
+                    width: CinearaElevation.artworkRimWidth(context),
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: _borderRadius,
+                  clipBehavior: Clip.antiAlias,
+                  child: ColoredBox(
+                    color: colors.surfaceContainerHighest,
+                    child: _ListPosterArtwork(
+                      artwork: artwork,
+                      externalRatingBadge: externalRatingBadge,
+                      artworkZoom: artworkZoom,
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
-      // External rating lives inside _ListPosterArtwork but outside the raw
-      // artwork transform. Progress remains in the normal poster overlay.
-      overlay: CinearaMediaPosterOverlay(
-        statusBadge: null,
-        externalRatingBadge: null,
-        statusDock: null,
-        progressIndicator: progressIndicator,
+            // -----------------------------------------------------------------
+            // Poster-edge progress
+            //
+            // This overlay is intentionally painted AFTER the rimmed artwork
+            // frame. Progress therefore visually replaces the bottom rim
+            // instead of allowing the rim to show as another line underneath.
+            // -----------------------------------------------------------------
+            if (progressIndicator != null)
+              Positioned.fill(
+                child: CinearaMediaPosterOverlay(
+                  statusBadge: null,
+                  externalRatingBadge: null,
+                  statusDock: null,
+                  progressIndicator: progressIndicator,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1066,6 +1156,9 @@ final class _ListPosterArtwork extends StatelessWidget {
             child: artwork,
           ),
         ),
+
+        // Rating is fixed relative to the poster frame and never participates
+        // in the raw-artwork zoom.
         if (externalRatingBadge != null)
           PositionedDirectional(
             start: 7,
