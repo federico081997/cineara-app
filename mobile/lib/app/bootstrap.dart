@@ -2,7 +2,7 @@ import 'package:cineara_design_system/cineara_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'app.dart';
-import 'config.dart';
+import 'config/app_config.dart';
 import 'routing/app_router.dart';
 import 'shell/app_root_destination.dart';
 

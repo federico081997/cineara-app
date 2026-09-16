@@ -1,7 +1,4 @@
 import 'package:cineara_design_system/cineara_design_system.dart';
-import 'package:cineara_design_system/components/buttons/filled_button.dart';
-import 'package:cineara_design_system/components/layout/centered_content.dart';
-import 'package:cineara_design_system/components/states/state_view.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 

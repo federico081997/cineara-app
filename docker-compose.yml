@@ -105,9 +105,6 @@ services:
   # ===========================================================================
 
   backend:
-    profiles:
-      - app
-
     build:
       context: ./backend
       dockerfile: Dockerfile
