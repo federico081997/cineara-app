@@ -156,11 +156,21 @@ final class _PreviewPageState extends State<_PreviewPage> {
         personalRating: 'Personal rating',
       );
 
+  static const CinearaStatusDockLabels _entityDockLabels =
+      CinearaStatusDockLabels(
+        dock: 'Personal entity status',
+        favorite: 'Favorite',
+        collection: 'In collection',
+        watchlist: 'In watchlist',
+        personalRating: 'Personal rating',
+      );
+
   _PreviewLayout _layout = _PreviewLayout.grid;
   _DockPreviewMode _dockMode = _DockPreviewMode.compact;
 
   late List<_PreviewMedia> _media;
   late List<_PreviewPerson> _people;
+  late List<_PreviewEntity> _entities;
   late String _selectedMediaId;
 
   int _dockReactionSerial = 0;
@@ -177,6 +187,10 @@ final class _PreviewPageState extends State<_PreviewPage> {
 
     _people = _initialPeople
         .map((_PreviewPerson person) => person.copyWith())
+        .toList(growable: false);
+
+    _entities = _initialEntities
+        .map((_PreviewEntity entity) => entity.copyWith())
         .toList(growable: false);
 
     _selectedMediaId = _media.first.id;
@@ -444,25 +458,18 @@ final class _PreviewPageState extends State<_PreviewPage> {
 
             // -----------------------------------------------------------------
             // Focused People results return to the regular content gutter.
-            //
-            // CinearaMediaList is intentionally reused as the generic list
-            // container. The tile family is CinearaPersonListItem rather
-            // than CinearaMediaListItem.
             // -----------------------------------------------------------------
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(24, 52, 24, 72),
+              padding: const EdgeInsets.fromLTRB(24, 52, 24, 0),
               sliver: SliverList.list(
                 children: <Widget>[
                   const _SectionHeader(
                     title: 'People · focused results',
                     description:
                         'Focused People results use CinearaPersonListItem. '
-                        'Their circular photos should use the same portrait '
-                        'depth language as People Grid: stronger local shadow, '
-                        'subtle resting lift, shared rim, 1.030 raw-photo zoom, '
-                        'and shadow contraction during interaction. Favorite '
-                        'stays outside the portrait depth treatment, while the '
-                        'List chevron moves toward the destination on tap.',
+                        'Their circular photos keep the same portrait '
+                        'interaction language as People Grid, while the List '
+                        'chevron moves toward the destination on tap.',
                   ),
 
                   const SizedBox(height: 24),
@@ -472,6 +479,87 @@ final class _PreviewPageState extends State<_PreviewPage> {
                     statusDockLabels: _personDockLabels,
                     onTap: _showPersonTap,
                     onLongPress: _showPersonQuickActions,
+                  ),
+                ],
+              ),
+            ),
+
+            // -----------------------------------------------------------------
+            // Search All entity rail. Collections and studios are the two
+            // entity families with meaningful visual treatments. Collections
+            // keep native 2:3 poster geometry; studios keep contained logo
+            // geometry. Topics intentionally stay out of the visual rail.
+            // -----------------------------------------------------------------
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 52, 24, 0),
+              sliver: SliverList.list(
+                children: const <Widget>[
+                  _SectionHeader(
+                    title: 'Entities · Search All rail',
+                    description:
+                        'Collections and studios reuse CinearaEntityGridItem '
+                        'inside CinearaHorizontalRail while preserving their '
+                        'native visual language. Collections use real 2:3 TMDB '
+                        'poster artwork; studios use contained TMDB logos with '
+                        'dedicated breathing room. Topics stay out of this visual '
+                        'rail rather than receiving fabricated artwork.',
+                  ),
+                  SizedBox(height: 24),
+                ],
+              ),
+            ),
+
+            SliverToBoxAdapter(
+              child: _EntityRailPreview(
+                entities: _entities,
+                statusDockLabels: _entityDockLabels,
+                onTap: _showEntityTap,
+                onLongPress: _showEntityQuickActions,
+              ),
+            ),
+
+            // -----------------------------------------------------------------
+            // Focused entity results. The page-level Grid/List control is
+            // reused here to exercise both entity presentation components.
+            // Topics remain List-only and are therefore omitted from Grid.
+            // -----------------------------------------------------------------
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 52, 24, 72),
+              sliver: SliverList.list(
+                children: <Widget>[
+                  _SectionHeader(
+                    title: _layout == _PreviewLayout.grid
+                        ? 'Entities · focused Grid'
+                        : 'Entities · focused List',
+                    description: _layout == _PreviewLayout.grid
+                        ? 'Collections and studios use CinearaEntityGridItem '
+                              'with variant-aware geometry. Collection artwork '
+                              'retains a true 2:3 poster presentation while '
+                              'studio logos use a contained logo surface with '
+                              'intentional breathing room; only the visual zooms.'
+                        : 'Collections, studios and topics use '
+                              'CinearaEntityListItem with media-List interaction. '
+                              'Collections keep poster artwork, studios keep '
+                              'contained logos, while Topics are text-only because '
+                              'the API supplies only their names. Favorite moves '
+                              'into the metadata/state rail instead of sitting on '
+                              'the List artwork.',
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: _EntityFocusedPreview(
+                      key: ValueKey<_PreviewLayout>(_layout),
+                      layout: _layout,
+                      entities: _entities,
+                      statusDockLabels: _entityDockLabels,
+                      onTap: _showEntityTap,
+                      onLongPress: _showEntityQuickActions,
+                    ),
                   ),
 
                   const SizedBox(height: 52),
@@ -645,6 +733,62 @@ final class _PreviewPageState extends State<_PreviewPage> {
       );
   }
 
+  void _showEntityTap(_PreviewEntity entity) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            '${entity.title} → open ${entity.descriptor.toLowerCase()}',
+          ),
+          duration: const Duration(milliseconds: 900),
+        ),
+      );
+  }
+
+  int _entityIndexFor(String id) {
+    return _entities.indexWhere((_PreviewEntity entity) => entity.id == id);
+  }
+
+  Future<void> _applyEntityState(_PreviewEntity next) async {
+    final int index = _entityIndexFor(next.id);
+
+    if (index < 0) {
+      return;
+    }
+
+    setState(() {
+      _entities = List<_PreviewEntity>.of(_entities)..[index] = next;
+    });
+  }
+
+  Future<void> _showEntityQuickActions(_PreviewEntity entity) async {
+    final _EntityEditResult? result =
+        await showModalBottomSheet<_EntityEditResult>(
+          context: context,
+          showDragHandle: true,
+          builder: (BuildContext context) {
+            return _EntityQuickActionsSheet(entity: entity);
+          },
+        );
+
+    if (result == null || !mounted) {
+      return;
+    }
+
+    // Match media/person choreography: let the modal finish disappearing before
+    // updating the underlying Favorite dock so its mutation animation remains
+    // fully visible.
+    await _waitForQuickActionsDismissal();
+
+    if (!mounted) {
+      return;
+    }
+
+    await _applyEntityState(result.entity);
+  }
+
   void _showPosterTap(_PreviewMedia media) {
     _selectMedia(media);
 
@@ -796,9 +940,9 @@ final class _PreviewHeader extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Media posters, people portraits, shared artwork elevation, '
-          'horizontal rails, focused rows, interactive state editing, and '
-          'production interaction feedback.',
+          'Media posters, people portraits, entity tiles, horizontal '
+          'rails, focused rows, interactive state editing, and production '
+          'interaction feedback.',
           style: theme.textTheme.bodyLarge?.copyWith(
             color: colors.onSurfaceVariant,
           ),
@@ -1913,6 +2057,193 @@ final class _PeopleListPreview extends StatelessWidget {
 }
 
 // =============================================================================
+// Entities
+// =============================================================================
+
+/// Search All presentation for entity types with meaningful visual assets.
+///
+/// The preview delegates all entity geometry to the production
+/// [CinearaEntityGridItem]. Collections use the poster variant, studios use the
+/// logo variant, and the component itself owns aspect ratio, fit, logo padding,
+/// rim, elevation, interaction depth and artwork Favorite placement.
+///
+/// Topics intentionally stay out of Search All's visual rail. They remain
+/// available in focused List results as text-only rows because the API provides
+/// a name but no visual identity.
+final class _EntityRailPreview extends StatelessWidget {
+  const _EntityRailPreview({
+    required this.entities,
+    required this.statusDockLabels,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final List<_PreviewEntity> entities;
+  final CinearaStatusDockLabels statusDockLabels;
+  final ValueChanged<_PreviewEntity> onTap;
+  final ValueChanged<_PreviewEntity> onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_PreviewEntity> railEntities = entities
+        .where((_PreviewEntity entity) => entity.supportsGrid)
+        .toList(growable: false);
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        const double contentInset = 12;
+        const double spacing = 16;
+        const double desiredNextItemPeek = 30;
+        const double compactVisibleCards = 2.30;
+
+        final double railWidth = constraints.maxWidth;
+
+        final double compactItemWidth =
+            (railWidth -
+                (contentInset * 2) -
+                (spacing * 2) -
+                desiredNextItemPeek) /
+            compactVisibleCards;
+
+        final double itemWidth = compactItemWidth.clamp(110, 136).toDouble();
+
+        return CinearaHorizontalRail(
+          itemWidth: itemWidth,
+          spacing: spacing,
+          padding: const EdgeInsetsDirectional.only(
+            start: contentInset,
+            end: contentInset,
+          ),
+          edgeFadeWidth: 36,
+          edgeFadeRevealDistance: 72,
+          edgeFadeColor: Theme.of(context).scaffoldBackgroundColor,
+          showOverscrollIndicator: false,
+          showScrollbar: false,
+          children: railEntities
+              .map((_PreviewEntity entity) {
+                return CinearaEntityGridItem(
+                  key: ValueKey<String>('entity-rail-${entity.id}'),
+                  title: entity.title,
+                  variant: entity.gridVisualVariant,
+                  image: entity.imageProvider,
+                  favorite: entity.favorite,
+                  showFavorite: true,
+                  statusDockLabels: statusDockLabels,
+                  fallbackIcon: entity.fallbackIcon,
+                  semanticLabel: entity.semanticLabel,
+                  semanticHint:
+                      'Open ${entity.descriptor.toLowerCase()}. '
+                      'Long press for ${entity.descriptor.toLowerCase()} quick actions.',
+                  onTap: () {
+                    onTap(entity);
+                  },
+                  onLongPress: () {
+                    onLongPress(entity);
+                  },
+                );
+              })
+              .toList(growable: false),
+        );
+      },
+    );
+  }
+}
+
+/// Focused entity category preview.
+///
+/// Collections and studios support Grid and List. Topics remain List-only so
+/// Search never invents artwork merely to make every scope visually identical.
+///
+/// Both branches use the production entity components directly:
+///
+/// - [CinearaEntityGridItem] owns responsive poster/logo geometry in Grid.
+/// - [CinearaEntityListItem] owns the media-List-style row interaction. Its
+///   leading visual is optional, so Topics can remain genuinely text-only.
+final class _EntityFocusedPreview extends StatelessWidget {
+  const _EntityFocusedPreview({
+    super.key,
+    required this.layout,
+    required this.entities,
+    required this.statusDockLabels,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final _PreviewLayout layout;
+  final List<_PreviewEntity> entities;
+  final CinearaStatusDockLabels statusDockLabels;
+  final ValueChanged<_PreviewEntity> onTap;
+  final ValueChanged<_PreviewEntity> onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    if (layout == _PreviewLayout.grid) {
+      final List<_PreviewEntity> gridEntities = entities
+          .where((_PreviewEntity entity) => entity.supportsGrid)
+          .toList(growable: false);
+
+      return CinearaResponsiveGrid(
+        children: gridEntities
+            .map((_PreviewEntity entity) {
+              return CinearaEntityGridItem(
+                key: ValueKey<String>('entity-grid-${entity.id}'),
+                title: entity.title,
+                variant: entity.gridVisualVariant,
+                image: entity.imageProvider,
+                favorite: entity.favorite,
+                showFavorite: true,
+                statusDockLabels: statusDockLabels,
+                fallbackIcon: entity.fallbackIcon,
+                semanticLabel: entity.semanticLabel,
+                semanticHint:
+                    'Open ${entity.descriptor.toLowerCase()}. '
+                    'Long press for ${entity.descriptor.toLowerCase()} quick actions.',
+                onTap: () {
+                  onTap(entity);
+                },
+                onLongPress: () {
+                  onLongPress(entity);
+                },
+              );
+            })
+            .toList(growable: false),
+      );
+    }
+
+    return CinearaContentList(
+      maximumWidth: 840,
+      separatorStartInset: CinearaEntityListItem.textOnlyMetadataRailInset,
+      separatorEndInset: 0,
+      separatorSpacing: 8,
+      children: entities
+          .map((_PreviewEntity entity) {
+            return CinearaEntityListItem(
+              key: ValueKey<String>('entity-list-${entity.id}'),
+              title: entity.title,
+              variant: entity.listVisualVariant,
+              image: entity.imageProvider,
+              favorite: entity.favorite,
+              showFavorite: true,
+              statusDockLabels: statusDockLabels,
+              fallbackIcon: entity.fallbackIcon,
+              semanticLabel: entity.semanticLabel,
+              semanticHint:
+                  'Open ${entity.descriptor.toLowerCase()}. '
+                  'Long press for ${entity.descriptor.toLowerCase()} quick actions.',
+              onTap: () {
+                onTap(entity);
+              },
+              onLongPress: () {
+                onLongPress(entity);
+              },
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+}
+
+// =============================================================================
 // List
 // =============================================================================
 
@@ -2224,6 +2555,112 @@ final class _PersonEditResult {
   const _PersonEditResult({required this.person});
 
   final _PreviewPerson person;
+}
+
+// =============================================================================
+// Entity Quick Actions
+// =============================================================================
+
+final class _EntityQuickActionsSheet extends StatefulWidget {
+  const _EntityQuickActionsSheet({required this.entity});
+
+  final _PreviewEntity entity;
+
+  @override
+  State<_EntityQuickActionsSheet> createState() =>
+      _EntityQuickActionsSheetState();
+}
+
+final class _EntityQuickActionsSheetState
+    extends State<_EntityQuickActionsSheet> {
+  late bool _favorite;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _favorite = widget.entity.favorite;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    final String descriptor = widget.entity.descriptor;
+    final String descriptorLower = descriptor.toLowerCase();
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              widget.entity.title,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '$descriptor Quick Actions',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 18),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.favorite_rounded),
+              title: Text('Favorite $descriptorLower'),
+              subtitle: Text(
+                'Updates the real Favorite status-dock treatment used by '
+                '${widget.entity.kind == _PreviewEntityKind.topic ? 'the text-only Topic row' : 'this $descriptorLower result'}.',
+              ),
+              value: _favorite,
+              onChanged: (bool value) {
+                setState(() {
+                  _favorite = value;
+                });
+              },
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(
+                      _EntityEditResult(
+                        entity: widget.entity.copyWith(favorite: _favorite),
+                      ),
+                    );
+                  },
+                  child: const Text('Apply'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+@immutable
+final class _EntityEditResult {
+  const _EntityEditResult({required this.entity});
+
+  final _PreviewEntity entity;
 }
 
 // =============================================================================
@@ -2631,9 +3068,19 @@ final class _InteractionExplanation extends StatelessWidget {
             'confirmed-hold depth and haptic. Favorite remains the real '
             'CinearaStatusDock outside the portrait depth treatment, so the '
             'heart styling and magnetic add/remove animation stay identical to '
-            'media. List additionally moves its chevron toward details on tap '
-            'confirmation. Reduced-motion mode keeps resting elevation static '
-            'instead of animating depth.',
+            'media. Entity Grid/List items use the same restrained full-item '
+            'pressure language while keeping only the visual zoomed. '
+            'Entity geometry is owned entirely by the production components: '
+            'Collections preserve true 2:3 TMDB poster geometry, Studios use '
+            'real transparent TMDB logos inside dedicated 3:2 contained-logo '
+            'surfaces with breathing room, while Topics are text-only in '
+            'List mode because the API supplies no topic artwork or icon. '
+            'Entity List Favorite moves into the metadata/state rail, matching '
+            'media List placement. Long press opens Entity Quick Actions so '
+            'Favorite changes can be tested on collections, studios and topics. '
+            'List chevrons move toward details on tap confirmation. '
+            'Reduced-motion mode keeps the interaction static instead of '
+            'animating depth or zoom.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -2697,6 +3144,23 @@ final class _PlacementReference extends StatelessWidget {
                 'chevron moves on tap confirmation',
           ),
           const _PlacementRow(
+            label: 'Entity Grid',
+            value:
+                'Variant-owned visual geometry · Collection posters keep true '
+                '2:3 artwork · Studio logos use dedicated contained-logo '
+                'surfaces with breathing room · complete tile interaction · '
+                'visual-only 1.030 zoom · shared rim · title only · '
+                'real Favorite dock',
+          ),
+          const _PlacementRow(
+            label: 'Entity List',
+            value:
+                'Collection poster / Studio logo / text-only Topic · complete '
+                'media-List-style row pressure · visual-only 1.030 zoom when a '
+                'visual exists · Favorite in metadata/state rail · RTL-aware '
+                'moving chevron · long press opens Entity Quick Actions',
+          ),
+          const _PlacementRow(
             label: 'Search list',
             value:
                 'Fixed poster frame + shared artwork elevation · external '
@@ -2707,9 +3171,10 @@ final class _PlacementReference extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Long press media to edit media state. Long press a person to '
-            'toggle Favorite in person Quick Actions. The workbench above '
-            'remains the faster route for repeatedly testing media transitions.',
+            'Long press media to edit media state. Long press a person, '
+            'collection, studio or topic to edit Favorite in the corresponding '
+            'Quick Actions sheet. The workbench above remains the faster route '
+            'for repeatedly testing media transitions.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -2763,6 +3228,171 @@ final class _PlacementRow extends StatelessWidget {
 // =============================================================================
 // Preview data
 // =============================================================================
+
+enum _PreviewEntityKind { collection, studio, topic }
+
+@immutable
+final class _PreviewEntity {
+  const _PreviewEntity({
+    required this.id,
+    required this.title,
+    required this.kind,
+    this.fallbackIcon,
+    this.subtitle,
+    this.imageUrl,
+    this.favorite = false,
+  });
+
+  final String id;
+  final String title;
+  final _PreviewEntityKind kind;
+  final String? subtitle;
+  final String? imageUrl;
+
+  /// Optional fallback only for entity families that genuinely own a visual.
+  /// Topics intentionally keep this null because the API supplies only a name.
+  final IconData? fallbackIcon;
+
+  final bool favorite;
+
+  String get descriptor {
+    return switch (kind) {
+      _PreviewEntityKind.collection => 'Collection',
+      _PreviewEntityKind.studio => 'Studio',
+      _PreviewEntityKind.topic => 'Topic',
+    };
+  }
+
+  /// Only entity types with genuine visual assets participate in Grid/rail.
+  bool get supportsGrid => kind != _PreviewEntityKind.topic;
+
+  /// Non-null because this is used only after [supportsGrid] has been checked.
+  CinearaEntityVisualVariant get gridVisualVariant {
+    return switch (kind) {
+      _PreviewEntityKind.collection => CinearaEntityVisualVariant.poster,
+      _PreviewEntityKind.studio => CinearaEntityVisualVariant.logo,
+      _PreviewEntityKind.topic => throw StateError(
+        'Topics are text-only and do not support Grid/rail visuals.',
+      ),
+    };
+  }
+
+  /// List may omit the leading visual entirely. This is the intended Topic
+  /// representation because TMDB keywords/topics provide no artwork identity.
+  CinearaEntityVisualVariant? get listVisualVariant {
+    return switch (kind) {
+      _PreviewEntityKind.collection => CinearaEntityVisualVariant.poster,
+      _PreviewEntityKind.studio => CinearaEntityVisualVariant.logo,
+      _PreviewEntityKind.topic => null,
+    };
+  }
+
+  ImageProvider<Object>? get imageProvider {
+    final String? url = imageUrl;
+
+    if (url == null || url.trim().isEmpty) {
+      return null;
+    }
+
+    return NetworkImage(url);
+  }
+
+  String get semanticLabel {
+    final List<String> parts = <String>[title, descriptor];
+
+    final String? supportingText = subtitle?.trim();
+
+    if (supportingText != null && supportingText.isNotEmpty) {
+      parts.add(supportingText);
+    }
+
+    if (favorite) {
+      parts.add('Favorite');
+    }
+
+    return parts.join('. ');
+  }
+
+  _PreviewEntity copyWith({
+    String? id,
+    String? title,
+    _PreviewEntityKind? kind,
+    String? subtitle,
+    bool clearSubtitle = false,
+    String? imageUrl,
+    bool clearImageUrl = false,
+    IconData? fallbackIcon,
+    bool clearFallbackIcon = false,
+    bool? favorite,
+  }) {
+    return _PreviewEntity(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      kind: kind ?? this.kind,
+      subtitle: clearSubtitle ? null : (subtitle ?? this.subtitle),
+      imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),
+      fallbackIcon: clearFallbackIcon
+          ? null
+          : (fallbackIcon ?? this.fallbackIcon),
+      favorite: favorite ?? this.favorite,
+    );
+  }
+}
+
+const List<_PreviewEntity> _initialEntities = <_PreviewEntity>[
+  _PreviewEntity(
+    id: 'collection-dune',
+    title: 'Dune Collection',
+    kind: _PreviewEntityKind.collection,
+    subtitle: 'Film collection',
+    imageUrl: 'https://image.tmdb.org/t/p/w500/lxIGYkpvYjLtYtZH684AQft0FhD.jpg',
+    fallbackIcon: Icons.video_library_rounded,
+    favorite: true,
+  ),
+  _PreviewEntity(
+    id: 'collection-star-wars',
+    title: 'Star Wars Collection',
+    kind: _PreviewEntityKind.collection,
+    subtitle: 'Film collection',
+    imageUrl: 'https://image.tmdb.org/t/p/w500/22dj38IckjzEEUZwN1tPU5VJ1qq.jpg',
+    fallbackIcon: Icons.video_library_rounded,
+  ),
+  _PreviewEntity(
+    id: 'studio-ghibli',
+    title: 'Studio Ghibli',
+    kind: _PreviewEntityKind.studio,
+    subtitle: 'Animation studio',
+    imageUrl: 'https://image.tmdb.org/t/p/w300/uFuxPEZRUcBTEiYIxjHJq62Vr77.png',
+    fallbackIcon: Icons.animation_rounded,
+    favorite: true,
+  ),
+  _PreviewEntity(
+    id: 'studio-lucasfilm',
+    title: 'Lucasfilm Ltd.',
+    kind: _PreviewEntityKind.studio,
+    subtitle: 'Film and television studio',
+    imageUrl: 'https://image.tmdb.org/t/p/w300/tlVSws0RvvtPBwViUyOFAO0vcQS.png',
+    fallbackIcon: Icons.movie_filter_rounded,
+  ),
+  _PreviewEntity(
+    id: 'topic-time-travel',
+    title: 'Time travel',
+    kind: _PreviewEntityKind.topic,
+    subtitle: 'Keyword',
+  ),
+  _PreviewEntity(
+    id: 'topic-artificial-intelligence',
+    title: 'Artificial intelligence',
+    kind: _PreviewEntityKind.topic,
+    subtitle: 'Keyword',
+  ),
+  _PreviewEntity(
+    id: 'topic-space-exploration',
+    title: 'Space exploration',
+    kind: _PreviewEntityKind.topic,
+    subtitle: 'Keyword',
+  ),
+];
 
 @immutable
 final class _PreviewPerson {

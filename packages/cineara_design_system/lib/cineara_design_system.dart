@@ -1,6 +1,8 @@
 export 'src/components/badges/external_rating_badge.dart';
 export 'src/components/badges/status_badge.dart';
 export 'src/components/buttons/filled_button.dart';
+export 'src/components/entities/entity_grid_item.dart';
+export 'src/components/entities/entity_list_item.dart';
 export 'src/components/feedback/state_view.dart';
 export 'src/components/layout/centered_content.dart';
 export 'src/components/layout/content_list.dart';
