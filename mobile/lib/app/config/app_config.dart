@@ -1,40 +1,17 @@
-/// Build-time and environment configuration for the Cineara mobile app.
-///
-/// This file contains configuration that is determined when the application
-/// is built or started, such as:
-///
-/// - development / staging / production environment;
-/// - Play Store / personal build flavour;
-/// - backend API base URL;
-/// - debug logging behaviour.
-///
-/// User preferences such as theme, poster size, spoiler protection, and
-/// tracking behaviour do NOT belong here. Those belong to the Settings
-/// feature.
-///
-/// Values can be overridden with Flutter `--dart-define`.
-///
-/// Example:
-///
-/// ```bash
-/// flutter run \
-///   --dart-define=CINEARA_ENV=development \
-///   --dart-define=CINEARA_FLAVOR=personal \
-///   --dart-define=CINEARA_API_BASE_URL=http://10.0.2.2:8000
-/// ```
+// Application environment
 enum AppEnvironment { development, staging, production }
 
-/// Distribution variant of the Cineara application.
-///
-/// `play`
-///   Public Play Store build.
-///
-/// `personal`
-///   Personal/private build that may enable functionality intentionally
-///   excluded from the public Play Store release.
+// Build variants of the application.
 enum AppFlavor { play, personal }
 
 final class AppConfig {
+  /// Creates the Cineara application configuration.
+  ///
+  /// **Parameters:**
+  /// - [environment] — Development, staging, or production environment.
+  /// - [flavor] — Distribution variant of the application.
+  /// - [apiBaseUrl] — Base URI used for backend API requests.
+  /// - [enableDebugLogging] — Whether additional debug logging is enabled.
   const AppConfig({
     required this.environment,
     required this.flavor,
@@ -42,39 +19,7 @@ final class AppConfig {
     required this.enableDebugLogging,
   });
 
-  /// Current backend/application environment.
-  final AppEnvironment environment;
-
-  /// Current distribution flavour.
-  final AppFlavor flavor;
-
-  /// Base URL of the Cineara backend API.
-  final String apiBaseUrl;
-
-  /// Whether verbose application logging is enabled.
-  ///
-  /// This should be disabled in production.
-  final bool enableDebugLogging;
-
-  /// Creates the configuration from Flutter `--dart-define` values.
-  ///
-  /// Supported values:
-  ///
-  /// CINEARA_ENV:
-  /// - development
-  /// - staging
-  /// - production
-  ///
-  /// CINEARA_FLAVOR:
-  /// - play
-  /// - personal
-  ///
-  /// CINEARA_API_BASE_URL:
-  /// - optional explicit API URL
-  ///
-  /// CINEARA_DEBUG_LOGGING:
-  /// - true
-  /// - false
+  // Creates the configuration from Flutter `--dart-define` values.
   factory AppConfig.fromEnvironment() {
     const environmentValue = String.fromEnvironment(
       'CINEARA_ENV',
@@ -86,20 +31,23 @@ final class AppConfig {
       defaultValue: 'play',
     );
 
-    const explicitApiBaseUrl = String.fromEnvironment('CINEARA_API_BASE_URL');
+    const apiBaseUrlValue = String.fromEnvironment('CINEARA_API_BASE_URL');
+
+    const debugLoggingValue = bool.fromEnvironment(
+      'CINEARA_DEBUG_LOGGING',
+      defaultValue: true,
+    );
 
     final AppEnvironment environment = _parseEnvironment(environmentValue);
 
     final AppFlavor flavor = _parseFlavor(flavorValue);
 
-    final String apiBaseUrl = explicitApiBaseUrl.trim().isNotEmpty
-        ? _normalizeBaseUrl(explicitApiBaseUrl)
+    final Uri apiBaseUrl = apiBaseUrlValue.trim().isNotEmpty
+        ? _normalizeBaseUrl(apiBaseUrlValue)
         : _defaultApiBaseUrl(environment);
 
-    const explicitDebugLogging = bool.fromEnvironment('CINEARA_DEBUG_LOGGING');
-
     final bool enableDebugLogging =
-        explicitDebugLogging || environment == AppEnvironment.development;
+        debugLoggingValue || environment == AppEnvironment.development;
 
     return AppConfig(
       environment: environment,
@@ -109,36 +57,18 @@ final class AppConfig {
     );
   }
 
-  /// Parsed URI version of [apiBaseUrl].
-  Uri get apiBaseUri => Uri.parse(apiBaseUrl);
+  // Fields
 
-  bool get isDevelopment => environment == AppEnvironment.development;
+  final AppEnvironment environment;
+  final AppFlavor flavor;
+  final Uri apiBaseUrl;
+  final bool enableDebugLogging;
 
-  bool get isStaging => environment == AppEnvironment.staging;
+  // Getters
 
-  bool get isProduction => environment == AppEnvironment.production;
-
-  bool get isPlayBuild => flavor == AppFlavor.play;
-
-  bool get isPersonalBuild => flavor == AppFlavor.personal;
-
-  /// Whether this build is allowed to expose adult-content functionality.
-  ///
-  /// This is a build capability, not the user's content preference.
-  ///
-  /// A separate user setting can later decide whether the user actually
-  /// enables adult content inside a build that supports it.
   bool get supportsAdultContent => flavor == AppFlavor.personal;
 
-  @override
-  String toString() {
-    return 'AppConfig('
-        'environment: ${environment.name}, '
-        'flavor: ${flavor.name}, '
-        'apiBaseUrl: $apiBaseUrl, '
-        'enableDebugLogging: $enableDebugLogging'
-        ')';
-  }
+  // Private helpers
 
   static AppEnvironment _parseEnvironment(String value) {
     return switch (value.trim().toLowerCase()) {
@@ -165,19 +95,16 @@ final class AppConfig {
     };
   }
 
-  static String _defaultApiBaseUrl(AppEnvironment environment) {
+  /// TODO: Change staging and production URLs when available.
+  static Uri _defaultApiBaseUrl(AppEnvironment environment) {
     return switch (environment) {
-      // Android emulator -> host machine localhost.
-      AppEnvironment.development => 'http://10.0.2.2:8000',
-
-      // TODO: Replace these when the staging/production domains exist.
-      AppEnvironment.staging => 'https://staging-api.cineara.app',
-
-      AppEnvironment.production => 'https://api.cineara.app',
+      AppEnvironment.development => Uri.parse('http://10.0.2.2:8000'),
+      AppEnvironment.staging => Uri.parse(''),
+      AppEnvironment.production => Uri.parse(''),
     };
   }
 
-  static String _normalizeBaseUrl(String value) {
+  static Uri _normalizeBaseUrl(String value) {
     var normalized = value.trim();
 
     while (normalized.endsWith('/')) {
@@ -196,12 +123,23 @@ final class AppConfig {
 
     if (uri.scheme != 'http' && uri.scheme != 'https') {
       throw ArgumentError.value(
-        value,
         'CINEARA_API_BASE_URL',
         'Only HTTP and HTTPS URLs are supported.',
       );
     }
 
-    return normalized;
+    return uri;
+  }
+
+  // Overrides
+
+  @override
+  String toString() {
+    return 'AppConfig('
+        'environment: ${environment.name}, '
+        'flavor: ${flavor.name}, '
+        'apiBaseUrl: $apiBaseUrl, '
+        'enableDebugLogging: $enableDebugLogging'
+        ')';
   }
 }
