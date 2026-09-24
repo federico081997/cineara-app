@@ -334,10 +334,11 @@ final class _PreviewPageState extends State<_PreviewPage> {
                               'one primary genre, and optional Cineara state. '
                               'The fixed List poster uses the same shared '
                               'artwork elevation as Grid, but only the raw '
-                              'artwork zooms. Pressing contracts the shadow '
-                              'while frame, rim, rating and progress stay fixed. '
-                              'A quiet separator starts at the metadata rail '
-                              'and ends at the same edge as the List row.',
+                              'artwork zooms. Missing or failed poster artwork '
+                              'uses the canonical neutral Cineara media fallback. '
+                              'Pressing contracts the shadow while frame, rim, '
+                              'rating and progress stay fixed. One parent-owned '
+                              'separator defines the rhythm between rows.',
                   ),
 
                   const SizedBox(height: 24),
@@ -501,8 +502,11 @@ final class _PreviewPageState extends State<_PreviewPage> {
                         'inside CinearaHorizontalRail while preserving their '
                         'native visual language. Collections use real 2:3 TMDB '
                         'poster artwork; studios use contained TMDB logos with '
-                        'dedicated breathing room. Topics stay out of this visual '
-                        'rail rather than receiving fabricated artwork.',
+                        'dedicated breathing room. A missing or failed Studio logo '
+                        'uses one shared company icon on the neutral fallback '
+                        'surface rather than the light real-logo plate. Topics '
+                        'stay out of this visual rail rather than receiving '
+                        'fabricated artwork.',
                   ),
                   SizedBox(height: 24),
                 ],
@@ -539,11 +543,12 @@ final class _PreviewPageState extends State<_PreviewPage> {
                               'intentional breathing room; only the visual zooms.'
                         : 'Collections, studios and topics use '
                               'CinearaEntityListItem with media-List interaction. '
-                              'Collections keep poster artwork, studios keep '
-                              'contained logos, while Topics are text-only because '
-                              'the API supplies only their names. Favorite moves '
-                              'into the metadata/state rail instead of sitting on '
-                              'the List artwork.',
+                              'Collections keep poster artwork and Studios keep '
+                              'contained logos; missing Studio artwork uses the '
+                              'shared company fallback. Topics stay text-only '
+                              'because the API supplies only their names. Favorite '
+                              'stays on Collection/Studio artwork and sits inline '
+                              'beside a Topic title.',
                   ),
 
                   const SizedBox(height: 24),
@@ -2021,9 +2026,11 @@ final class _PeopleListPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CinearaContentList(
-      maximumWidth: 840,
+      maximumWidth: double.infinity,
 
-      // Geometry comes from the production People List component.
+      // The preview lets the parent page own tablet width/alignment instead of
+      // centering the complete List inside a fixed 840 dp island. Row geometry
+      // still comes from the production People List component.
       separatorStartInset: CinearaPersonListItem.defaultMetadataRailInset,
       separatorEndInset: 0,
       separatorSpacing: 8,
@@ -2129,7 +2136,9 @@ final class _EntityRailPreview extends StatelessWidget {
                   favorite: entity.favorite,
                   showFavorite: true,
                   statusDockLabels: statusDockLabels,
-                  fallbackIcon: entity.fallbackIcon,
+                  fallbackIcon: entity.kind == _PreviewEntityKind.studio
+                      ? null
+                      : entity.fallbackIcon,
                   semanticLabel: entity.semanticLabel,
                   semanticHint:
                       'Open ${entity.descriptor.toLowerCase()}. '
@@ -2193,7 +2202,9 @@ final class _EntityFocusedPreview extends StatelessWidget {
                 favorite: entity.favorite,
                 showFavorite: true,
                 statusDockLabels: statusDockLabels,
-                fallbackIcon: entity.fallbackIcon,
+                fallbackIcon: entity.kind == _PreviewEntityKind.studio
+                    ? null
+                    : entity.fallbackIcon,
                 semanticLabel: entity.semanticLabel,
                 semanticHint:
                     'Open ${entity.descriptor.toLowerCase()}. '
@@ -2211,8 +2222,11 @@ final class _EntityFocusedPreview extends StatelessWidget {
     }
 
     return CinearaContentList(
-      maximumWidth: 840,
-      separatorStartInset: CinearaEntityListItem.textOnlyMetadataRailInset,
+      // Entity rows themselves own no width cap and no separator. The parent
+      // list fills the available content region and draws exactly one separator
+      // between siblings, avoiding doubled lines on tablet/desktop.
+      maximumWidth: double.infinity,
+      separatorStartInset: CinearaEntityListItem.defaultMetadataRailInset,
       separatorEndInset: 0,
       separatorSpacing: 8,
       children: entities
@@ -2225,7 +2239,9 @@ final class _EntityFocusedPreview extends StatelessWidget {
               favorite: entity.favorite,
               showFavorite: true,
               statusDockLabels: statusDockLabels,
-              fallbackIcon: entity.fallbackIcon,
+              fallbackIcon: entity.kind == _PreviewEntityKind.studio
+                  ? null
+                  : entity.fallbackIcon,
               semanticLabel: entity.semanticLabel,
               semanticHint:
                   'Open ${entity.descriptor.toLowerCase()}. '
@@ -2275,10 +2291,11 @@ final class _ListPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CinearaContentList(
-      maximumWidth: 840,
+      maximumWidth: double.infinity,
 
-      // Search media rows keep the approved separator geometry:
-      // metadata rail -> same logical edge as the row / pressed tile.
+      // Search media rows fill the parent content region. CinearaContentList is
+      // the single separator authority: metadata rail -> same logical edge as the
+      // row / pressed tile.
       separatorStartInset: CinearaMediaListItem.defaultMetadataRailInset,
       separatorEndInset: 0,
       separatorSpacing: 8,
@@ -2971,13 +2988,17 @@ final class _MediaEditResult {
 final class _NetworkPoster extends StatelessWidget {
   const _NetworkPoster({required this.url, required this.title});
 
-  final String url;
+  final String? url;
   final String title;
 
   @override
   Widget build(BuildContext context) {
+    final String? resolvedUrl = url?.trim();
+
     return CinearaPosterImage(
-      image: NetworkImage(url),
+      image: resolvedUrl == null || resolvedUrl.isEmpty
+          ? null
+          : NetworkImage(resolvedUrl),
 
       // CinearaMediaPoster already supplies the 2:3 geometry.
       constrainToPosterAspectRatio: false,
@@ -2986,37 +3007,11 @@ final class _NetworkPoster extends StatelessWidget {
       semanticLabel: title,
       excludeFromSemantics: true,
 
-      errorBuilder: (BuildContext context) {
-        final ColorScheme colors = Theme.of(context).colorScheme;
-
-        return ColoredBox(
-          color: colors.surfaceContainerHighest,
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(
-                    Icons.broken_image_outlined,
-                    color: colors.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    title,
-                    maxLines: 2,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+      // No custom placeholder/error builders here. The production poster image
+      // is intentionally previewed as-is:
+      //
+      // loading       -> quiet neutral surface
+      // missing/fail  -> neutral surface + canonical primary movie icon
     );
   }
 }
@@ -3363,16 +3358,14 @@ const List<_PreviewEntity> _initialEntities = <_PreviewEntity>[
     kind: _PreviewEntityKind.studio,
     subtitle: 'Animation studio',
     imageUrl: 'https://image.tmdb.org/t/p/w300/uFuxPEZRUcBTEiYIxjHJq62Vr77.png',
-    fallbackIcon: Icons.animation_rounded,
     favorite: true,
   ),
   _PreviewEntity(
     id: 'studio-lucasfilm',
     title: 'Lucasfilm Ltd.',
     kind: _PreviewEntityKind.studio,
-    subtitle: 'Film and television studio',
-    imageUrl: 'https://image.tmdb.org/t/p/w300/tlVSws0RvvtPBwViUyOFAO0vcQS.png',
-    fallbackIcon: Icons.movie_filter_rounded,
+    subtitle: 'Film and television studio · missing artwork demo',
+    imageUrl: null,
   ),
   _PreviewEntity(
     id: 'topic-time-travel',
@@ -3581,7 +3574,9 @@ final class _PreviewMedia {
   /// as a third information line; multiple genres are intentionally not shown.
   final String? primaryGenre;
 
-  final String imageUrl;
+  /// Null deliberately exercises CinearaPosterImage's canonical missing-artwork
+  /// fallback in this preview.
+  final String? imageUrl;
 
   final double externalRating;
   final bool showExternalRating;
@@ -3621,6 +3616,7 @@ final class _PreviewMedia {
     String? primaryGenre,
     bool clearPrimaryGenre = false,
     String? imageUrl,
+    bool clearImageUrl = false,
     double? externalRating,
     bool? showExternalRating,
     CinearaStatusBadgeType? status,
@@ -3641,7 +3637,7 @@ final class _PreviewMedia {
       primaryGenre: clearPrimaryGenre
           ? null
           : (primaryGenre ?? this.primaryGenre),
-      imageUrl: imageUrl ?? this.imageUrl,
+      imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),
       externalRating: externalRating ?? this.externalRating,
       showExternalRating: showExternalRating ?? this.showExternalRating,
       status: clearStatus ? null : (status ?? this.status),
@@ -3749,7 +3745,7 @@ const List<_PreviewMedia> _initialMedia = <_PreviewMedia>[
     descriptor: 'Movie',
     year: 2024,
     primaryGenre: 'Adventure',
-    imageUrl: 'https://image.tmdb.org/t/p/w500/kDp1vUBnMpe8ak4rjgl3cLELqjU.jpg',
+    imageUrl: null,
     externalRating: 7.1,
     showExternalRating: true,
     status: null,

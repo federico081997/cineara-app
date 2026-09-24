@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/media/media.dart';
@@ -7,51 +8,28 @@ import 'app_routes.dart';
 
 /// Builds the nested routes shared by every Cineara root navigation branch.
 ///
-/// Each root branch exposes the same normal application flows:
+/// Search remains on the current [StatefulShellBranch]. Its route uses a
+/// [NoTransitionPage] because the persistent shell owns the Search-bar morph,
+/// while [SearchPage] owns category, loading and result motion inside the page.
 ///
-/// ```text
-/// search
-///
-/// media/:mediaType/:mediaId
-/// └── season/:seasonNumber
-///     └── episode/:episodeNumber
-/// ```
-///
-/// For example, the same media details page can therefore exist at:
-///
-/// ```text
-/// /home/media/movie/550
-/// /discover/media/movie/550
-/// /library/media/movie/550
-/// /profile/media/movie/550
-/// ```
-///
-/// The owning root destination affects only the route location and navigation
-/// stack. It does not produce destination-specific versions of feature pages.
-///
-/// In particular, there should be one:
-///
-/// ```text
-/// MediaDetailsPage
-/// ```
-///
-/// rather than separate `HomeMediaDetailsPage`,
-/// `DiscoverMediaDetailsPage`, and similar wrappers.
-///
-/// These routes deliberately do not specify a `parentNavigatorKey`. They remain
-/// on the navigator belonging to the current [StatefulShellBranch], allowing
-/// Cineara's persistent bottom navigation and branch history to remain intact.
+/// Media, season and episode routes remain branch-local so Cineara's persistent
+/// bottom navigation and independent branch history stay intact.
 List<RouteBase> buildSharedBranchRoutes({
   required AppRootDestination destination,
 }) {
-  return [
+  return <RouteBase>[
     // -------------------------------------------------------------------------
     // Search
     // -------------------------------------------------------------------------
     GoRoute(
       path: AppRoutes.searchSegment,
-      builder: (context, state) {
-        return const SearchPage();
+      pageBuilder: (BuildContext context, GoRouterState state) {
+        debugPrint('[SEARCH] Route matched: ${state.uri}');
+
+        return NoTransitionPage<void>(
+          key: state.pageKey,
+          child: SearchPage(destination: destination),
+        );
       },
     ),
 
@@ -68,12 +46,12 @@ List<RouteBase> buildSharedBranchRoutes({
         return null;
       },
       builder: (context, state) {
-        final mediaType = _mediaTypeFrom(state);
-        final mediaId = _positiveIntFrom(state, AppRoutes.mediaIdParameter);
+        final String mediaType = _mediaTypeFrom(state);
+        final int mediaId = _positiveIntFrom(state, AppRoutes.mediaIdParameter);
 
         return MediaDetailsPage(mediaType: mediaType, mediaId: mediaId);
       },
-      routes: [
+      routes: <RouteBase>[
         // ---------------------------------------------------------------------
         // Season details
         // ---------------------------------------------------------------------
@@ -84,7 +62,7 @@ List<RouteBase> buildSharedBranchRoutes({
               return AppRoutes.locationFor(destination);
             }
 
-            final seasonNumber = _nonNegativeIntOrNull(
+            final int? seasonNumber = _nonNegativeIntOrNull(
               state,
               AppRoutes.seasonNumberParameter,
             );
@@ -96,9 +74,12 @@ List<RouteBase> buildSharedBranchRoutes({
             return null;
           },
           builder: (context, state) {
-            final mediaType = _mediaTypeFrom(state);
-            final mediaId = _positiveIntFrom(state, AppRoutes.mediaIdParameter);
-            final seasonNumber = _nonNegativeIntFrom(
+            final String mediaType = _mediaTypeFrom(state);
+            final int mediaId = _positiveIntFrom(
+              state,
+              AppRoutes.mediaIdParameter,
+            );
+            final int seasonNumber = _nonNegativeIntFrom(
               state,
               AppRoutes.seasonNumberParameter,
             );
@@ -109,7 +90,7 @@ List<RouteBase> buildSharedBranchRoutes({
               seasonNumber: seasonNumber,
             );
           },
-          routes: [
+          routes: <RouteBase>[
             // -----------------------------------------------------------------
             // Episode details
             // -----------------------------------------------------------------
@@ -120,7 +101,7 @@ List<RouteBase> buildSharedBranchRoutes({
                   return AppRoutes.locationFor(destination);
                 }
 
-                final seasonNumber = _nonNegativeIntOrNull(
+                final int? seasonNumber = _nonNegativeIntOrNull(
                   state,
                   AppRoutes.seasonNumberParameter,
                 );
@@ -132,7 +113,7 @@ List<RouteBase> buildSharedBranchRoutes({
                   );
                 }
 
-                final episodeNumber = _positiveIntOrNull(
+                final int? episodeNumber = _positiveIntOrNull(
                   state,
                   AppRoutes.episodeNumberParameter,
                 );
@@ -148,16 +129,16 @@ List<RouteBase> buildSharedBranchRoutes({
                 return null;
               },
               builder: (context, state) {
-                final mediaType = _mediaTypeFrom(state);
-                final mediaId = _positiveIntFrom(
+                final String mediaType = _mediaTypeFrom(state);
+                final int mediaId = _positiveIntFrom(
                   state,
                   AppRoutes.mediaIdParameter,
                 );
-                final seasonNumber = _nonNegativeIntFrom(
+                final int seasonNumber = _nonNegativeIntFrom(
                   state,
                   AppRoutes.seasonNumberParameter,
                 );
-                final episodeNumber = _positiveIntFrom(
+                final int episodeNumber = _positiveIntFrom(
                   state,
                   AppRoutes.episodeNumberParameter,
                 );
@@ -181,14 +162,8 @@ List<RouteBase> buildSharedBranchRoutes({
 // Route validation
 // =============================================================================
 
-/// Whether the required media route parameters are valid.
-///
-/// Media identifiers must be positive TMDB identifiers. The media type only
-/// needs to be a non-empty path value here; interpretation of supported media
-/// types belongs to the media-details feature rather than this generic routing
-/// helper.
 bool _hasValidMediaParameters(GoRouterState state) {
-  final mediaType = state.pathParameters[AppRoutes.mediaTypeParameter];
+  final String? mediaType = state.pathParameters[AppRoutes.mediaTypeParameter];
 
   if (mediaType == null || mediaType.trim().isEmpty) {
     return false;
@@ -202,7 +177,7 @@ bool _hasValidMediaParameters(GoRouterState state) {
 // =============================================================================
 
 String _mediaTypeFrom(GoRouterState state) {
-  final value = state.pathParameters[AppRoutes.mediaTypeParameter];
+  final String? value = state.pathParameters[AppRoutes.mediaTypeParameter];
 
   if (value == null || value.trim().isEmpty) {
     throw StateError(
@@ -214,7 +189,7 @@ String _mediaTypeFrom(GoRouterState state) {
 }
 
 int _positiveIntFrom(GoRouterState state, String parameter) {
-  final value = _positiveIntOrNull(state, parameter);
+  final int? value = _positiveIntOrNull(state, parameter);
 
   if (value == null) {
     throw StateError(
@@ -226,13 +201,13 @@ int _positiveIntFrom(GoRouterState state, String parameter) {
 }
 
 int? _positiveIntOrNull(GoRouterState state, String parameter) {
-  final raw = state.pathParameters[parameter];
+  final String? raw = state.pathParameters[parameter];
 
   if (raw == null) {
     return null;
   }
 
-  final value = int.tryParse(raw);
+  final int? value = int.tryParse(raw);
 
   if (value == null || value <= 0) {
     return null;
@@ -242,7 +217,7 @@ int? _positiveIntOrNull(GoRouterState state, String parameter) {
 }
 
 int _nonNegativeIntFrom(GoRouterState state, String parameter) {
-  final value = _nonNegativeIntOrNull(state, parameter);
+  final int? value = _nonNegativeIntOrNull(state, parameter);
 
   if (value == null) {
     throw StateError(
@@ -254,13 +229,13 @@ int _nonNegativeIntFrom(GoRouterState state, String parameter) {
 }
 
 int? _nonNegativeIntOrNull(GoRouterState state, String parameter) {
-  final raw = state.pathParameters[parameter];
+  final String? raw = state.pathParameters[parameter];
 
   if (raw == null) {
     return null;
   }
 
-  final value = int.tryParse(raw);
+  final int? value = int.tryParse(raw);
 
   if (value == null || value < 0) {
     return null;
@@ -273,10 +248,6 @@ int? _nonNegativeIntOrNull(GoRouterState state, String parameter) {
 // Invalid-route fallbacks
 // =============================================================================
 
-/// Returns the media-details location represented by [state].
-///
-/// If the media parameters themselves are invalid, the owning root destination
-/// is returned instead.
 String _mediaLocationFor({
   required AppRootDestination destination,
   required GoRouterState state,
@@ -292,9 +263,6 @@ String _mediaLocationFor({
   );
 }
 
-/// Returns the season-details location represented by [state].
-///
-/// Invalid media parameters fall back to the root destination.
 String _seasonLocationFor({
   required AppRootDestination destination,
   required GoRouterState state,

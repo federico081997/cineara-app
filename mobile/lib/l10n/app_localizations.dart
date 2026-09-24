@@ -167,6 +167,336 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open profile menu'**
   String get topBarOpenProfileMenu;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get searchPageTitle;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Search Cineara'**
+  String get searchFieldLabel;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Search Cineara'**
+  String get searchHint;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get searchClearSearch;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get searchRetry;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'See all'**
+  String get searchSeeAll;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent searches'**
+  String get searchRecentSearches;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get searchRecommended;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get searchClearRecent;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove recent search'**
+  String get searchRemoveRecentSearch;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching…'**
+  String get searchSearching;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading more…'**
+  String get searchLoadingMore;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get searchLoadMore;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get searchTryAgain;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'No results'**
+  String get searchNoResultsTitle;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Try another title, person, collection, studio, or keyword.'**
+  String get searchNoResultsMessage;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Search unavailable'**
+  String get searchErrorTitle;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong while searching. Please try again.'**
+  String get searchErrorMessage;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Find something to watch'**
+  String get searchStartTitle;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Search across movies, TV series, people, collections, studios, and keywords.'**
+  String get searchStartMessage;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Grid'**
+  String get searchGrid;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'List'**
+  String get searchList;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get searchCategoryAll;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Movies'**
+  String get searchCategoryMovies;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'TV series'**
+  String get searchCategoryTvSeries;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'People'**
+  String get searchCategoryPeople;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Collections'**
+  String get searchCategoryCollections;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Studios'**
+  String get searchCategoryStudios;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Keywords'**
+  String get searchCategoryKeywords;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Movie'**
+  String get searchMovieDescriptor;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'TV series'**
+  String get searchTvSeriesDescriptor;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewing progress'**
+  String get searchViewingProgress;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Open media details'**
+  String get searchOpenMedia;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Open person details'**
+  String get searchOpenPerson;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Open collection details'**
+  String get searchOpenCollection;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Open studio details'**
+  String get searchOpenStudio;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Search this keyword'**
+  String get searchOpenKeyword;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Focus search'**
+  String get searchFocusShortcut;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Ctrl K'**
+  String get searchControlShortcutLabel;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'⌘K'**
+  String get searchMetaShortcutLabel;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Search categories'**
+  String get searchCategoriesLabel;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No results} =1{1 result} other{{count} results}}'**
+  String searchResultCount(int count);
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'{rating} out of 10'**
+  String searchRatingOutOfTen(String rating);
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Personal media status'**
+  String get searchStatusDock;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorite'**
+  String get searchFavorite;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'In collection'**
+  String get searchInCollection;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'In watchlist'**
+  String get searchInWatchlist;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Personal rating'**
+  String get searchPersonalRating;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Watching'**
+  String get searchStatusWatching;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Caught up'**
+  String get searchStatusCaughtUp;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get searchStatusCompleted;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Rewatching'**
+  String get searchStatusRewatching;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'On hold'**
+  String get searchStatusOnHold;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'Dropped'**
+  String get searchStatusDropped;
+
+  /// Search feature localized string.
+  ///
+  /// In en, this message translates to:
+  /// **'This type of detail page is not available yet.'**
+  String get searchDetailsUnavailable;
 }
 
 class _AppLocalizationsDelegate

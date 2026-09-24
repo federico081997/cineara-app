@@ -4,6 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../l10n/app_localizations.dart';
 
+/// Root application widget for Cineara.
+///
+/// This widget owns router composition, localization, and application theme
+/// selection. Feature-level navigation and motion remain with the router,
+/// application shell, and individual feature surfaces.
 final class CinearaApp extends StatelessWidget {
   const CinearaApp({
     required this.router,
@@ -15,20 +20,19 @@ final class CinearaApp extends StatelessWidget {
   /// Root application router.
   final GoRouter router;
 
-  /// Current user-selected application theme.
-  ///
-  /// Defaults to following the operating system light or dark preference.
+  /// Current application theme preference.
   final CinearaAppTheme appTheme;
 
-  /// Current user-selected locale.
+  /// Current application locale.
   ///
-  /// When null, Flutter uses the device locale.
+  /// When null, Flutter resolves the locale from the device settings.
   final Locale? locale;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+      onGenerateTitle: (BuildContext context) =>
+          AppLocalizations.of(context)!.appTitle,
       debugShowCheckedModeBanner: false,
 
       // Routing

@@ -1,6 +1,6 @@
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart';
+import 'package:cineara_design_system/cineara_design_system.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../app/config/app_config.dart';
@@ -12,11 +12,9 @@ import '../presentation/pages/search_page.dart';
 
 /// Minimal decoded-JSON GET boundary required by [SearchRepository].
 ///
-/// Cineara's current mobile `lib/` tree does not yet contain the shared
-/// networking layer referenced by `bootstrap.dart`. The repository therefore
-/// depends on this small transport contract instead of inventing a Dio/http API.
-///
-/// When the shared API client is added, adapt it once:
+/// The repository depends on this narrow transport contract rather than on a
+/// specific HTTP implementation. Cineara's shared `ApiClient.getJson` satisfies
+/// it directly:
 ///
 /// ```dart
 /// final repository = SearchRepository.fromAppConfig(
@@ -35,33 +33,27 @@ import '../presentation/pages/search_page.dart';
 /// decoding, not global networking/error policy.
 typedef SearchJsonGet = Future<Object?> Function(Uri uri);
 
-/// Locale-aware resolver for the short media descriptor rendered below a title.
-///
-/// Search JSON should not force English UI text into the repository. The
-/// resolver may use the active localization layer to return the appropriate
-/// equivalent of "Movie" or "TV series".
-typedef SearchMediaDescriptorResolver =
-    String Function(CinearaSearchMediaKind kind, Map<String, Object?> payload);
-
 /// How Search > All is fetched.
 enum SearchAllStrategy {
-  /// Preferred architecture.
+  /// Uses one grouped Search endpoint.
   ///
-  /// Uses one grouped endpoint:
+  /// The endpoint receives Cineara's backend query parameter:
   ///
-  /// `GET /api/v1/search/overview?query=...`
+  /// `GET /api/v1/search/overview?q=...`
   overview,
 
-  /// Compatibility path when the backend does not yet expose `/overview`.
+  /// Composes Search > All from the backend's focused Search categories.
   ///
-  /// Performs four bounded requests in parallel:
+  /// The current backend accepts:
   ///
-  /// - `type=all`      -> movie / TV / person multi-search;
+  /// - `type=movies`;
+  /// - `type=tv`;
+  /// - `type=people`;
   /// - `type=collections`;
-  /// - `type=companies`;
-  /// - `type=keywords`.
+  /// - `type=studios`;
+  /// - `type=topics`.
   ///
-  /// There is no per-result enrichment and therefore no N+1 request pattern.
+  /// Requests run in parallel and do not perform per-result enrichment.
   fanOut,
 }
 
@@ -73,8 +65,8 @@ enum SearchRepositoryErrorKind { invalidRequest, invalidPayload }
 
 /// Search-specific validation/decoding failure.
 ///
-/// HTTP, timeout, offline and authentication errors should continue to come
-/// from Cineara's future shared networking layer rather than being wrapped here.
+/// HTTP, timeout, offline and authentication errors continue to come from
+/// Cineara's shared networking layer rather than being wrapped here.
 @immutable
 final class SearchRepositoryException implements Exception {
   const SearchRepositoryException({
@@ -130,17 +122,15 @@ final class SearchRepositoryException implements Exception {
 final class SearchRepository {
   SearchRepository({
     required Uri baseUri,
-    required SearchJsonGet getJson,
-    this.allStrategy = SearchAllStrategy.overview,
+    required this.getJson,
+    this.allStrategy = SearchAllStrategy.fanOut,
     this.searchPath = '/api/v1/search',
     this.overviewPath = '/api/v1/search/overview',
-    this.queryParameter = 'query',
+    this.queryParameter = 'q',
     this.typeParameter = 'type',
     this.pageParameter = 'page',
     this.commonQueryParameters = const <String, String>{},
-    this.mediaDescriptorResolver,
   }) : _baseUri = _validateBaseUri(baseUri),
-       _getJson = getJson,
        assert(searchPath != ''),
        assert(overviewPath != ''),
        assert(queryParameter != ''),
@@ -151,21 +141,19 @@ final class SearchRepository {
   factory SearchRepository.fromAppConfig({
     required AppConfig config,
     required SearchJsonGet getJson,
-    SearchAllStrategy allStrategy = SearchAllStrategy.overview,
+    SearchAllStrategy allStrategy = SearchAllStrategy.fanOut,
     Map<String, String> commonQueryParameters = const <String, String>{},
-    SearchMediaDescriptorResolver? mediaDescriptorResolver,
   }) {
     return SearchRepository(
       baseUri: config.apiBaseUri,
       getJson: getJson,
       allStrategy: allStrategy,
       commonQueryParameters: commonQueryParameters,
-      mediaDescriptorResolver: mediaDescriptorResolver,
     );
   }
 
   final Uri _baseUri;
-  final SearchJsonGet _getJson;
+  final SearchJsonGet getJson;
 
   final SearchAllStrategy allStrategy;
 
@@ -181,8 +169,6 @@ final class SearchRepository {
   /// Use this only for request-wide backend parameters that are not already
   /// applied by the shared API client/interceptors.
   final Map<String, String> commonQueryParameters;
-
-  final SearchMediaDescriptorResolver? mediaDescriptorResolver;
 
   /// Function signature expected by `CinearaSearchDependencies.loader`.
   Future<CinearaSearchResponse> search(CinearaSearchRequest request) async {
@@ -227,7 +213,7 @@ final class SearchRepository {
     });
 
     final Map<String, Object?> root = _expectMap(
-      await _getJson(uri),
+      await getJson(uri),
       context: 'Search overview',
     );
 
@@ -249,32 +235,29 @@ final class SearchRepository {
   }
 
   Future<CinearaSearchResponse> _loadAllByFanOut(String query) async {
-    final List<CinearaSearchResponse> pages =
-        await Future.wait<CinearaSearchResponse>(
-          <Future<CinearaSearchResponse>>[
-            _loadPage(
-              query: query,
-              category: CinearaSearchCategory.all,
-              page: 1,
-              allowAllCategory: true,
-            ),
-            _loadPage(
-              query: query,
-              category: CinearaSearchCategory.collections,
-              page: 1,
-            ),
-            _loadPage(
-              query: query,
-              category: CinearaSearchCategory.studios,
-              page: 1,
-            ),
-            _loadPage(
-              query: query,
-              category: CinearaSearchCategory.keywords,
-              page: 1,
-            ),
-          ],
-        );
+    final List<CinearaSearchResponse>
+    pages = await Future.wait<CinearaSearchResponse>(<
+      Future<CinearaSearchResponse>
+    >[
+      _loadPage(query: query, category: CinearaSearchCategory.movies, page: 1),
+      _loadPage(
+        query: query,
+        category: CinearaSearchCategory.tvSeries,
+        page: 1,
+      ),
+      _loadPage(query: query, category: CinearaSearchCategory.people, page: 1),
+      _loadPage(
+        query: query,
+        category: CinearaSearchCategory.collections,
+        page: 1,
+      ),
+      _loadPage(query: query, category: CinearaSearchCategory.studios, page: 1),
+      _loadPage(
+        query: query,
+        category: CinearaSearchCategory.keywords,
+        page: 1,
+      ),
+    ]);
 
     final LinkedHashMap<String, CinearaSearchResult> deduplicated =
         LinkedHashMap<String, CinearaSearchResult>();
@@ -329,11 +312,17 @@ final class SearchRepository {
       }
 
       final List<Object?> items = _extractItems(root[key]);
+      final CinearaSearchCategory? categoryHint = _overviewCategoryHintForKey(
+        key,
+      );
 
       for (final Object? raw in items) {
         encountered++;
 
-        final CinearaSearchResult? result = _tryParseResult(raw);
+        final CinearaSearchResult? result = _tryParseResult(
+          raw,
+          categoryHint: categoryHint,
+        );
 
         if (result == null) {
           rejected++;
@@ -361,11 +350,23 @@ final class SearchRepository {
         }
 
         final Map<String, Object?> section = _stringKeyedMap(sectionRaw);
+        final String? sectionType = _readString(section, const <String>[
+          'type',
+          'category',
+          'result_type',
+          'resultType',
+        ]);
+        final CinearaSearchCategory? categoryHint = sectionType == null
+            ? null
+            : _overviewCategoryHintForKey(sectionType);
 
         for (final Object? raw in _extractItems(section)) {
           encountered++;
 
-          final CinearaSearchResult? result = _tryParseResult(raw);
+          final CinearaSearchResult? result = _tryParseResult(
+            raw,
+            categoryHint: categoryHint,
+          );
 
           if (result == null) {
             rejected++;
@@ -413,12 +414,11 @@ final class SearchRepository {
     required String query,
     required CinearaSearchCategory category,
     required int page,
-    bool allowAllCategory = false,
   }) async {
-    if (category == CinearaSearchCategory.all && !allowAllCategory) {
+    if (category == CinearaSearchCategory.all) {
       throw const SearchRepositoryException(
         kind: SearchRepositoryErrorKind.invalidRequest,
-        message: 'All Search must use the overview request.',
+        message: 'All Search must be composed from focused Search categories.',
       );
     }
 
@@ -430,7 +430,7 @@ final class SearchRepository {
     });
 
     final Map<String, Object?> root = _expectMap(
-      await _getJson(uri),
+      await getJson(uri),
       context: 'Search page',
     );
 
@@ -479,6 +479,33 @@ final class SearchRepository {
       totalPages: parsedTotalPages < 0 ? 0 : parsedTotalPages,
       totalResults: parsedTotalResults < 0 ? 0 : parsedTotalResults,
     );
+  }
+
+  CinearaSearchCategory? _overviewCategoryHintForKey(String value) {
+    final String normalized = value
+        .trim()
+        .toLowerCase()
+        .replaceAll('-', '_')
+        .replaceAll(' ', '_');
+
+    return switch (normalized) {
+      'movies' || 'movie' => CinearaSearchCategory.movies,
+      'tv' ||
+      'tv_series' ||
+      'tvseries' ||
+      'series' => CinearaSearchCategory.tvSeries,
+      'people' || 'person' => CinearaSearchCategory.people,
+      'collections' || 'collection' => CinearaSearchCategory.collections,
+      'companies' ||
+      'company' ||
+      'studios' ||
+      'studio' => CinearaSearchCategory.studios,
+      'keywords' ||
+      'keyword' ||
+      'topics' ||
+      'topic' => CinearaSearchCategory.keywords,
+      _ => null,
+    };
   }
 
   // ===========================================================================
@@ -695,17 +722,16 @@ final class SearchRepository {
 
   String _backendType(CinearaSearchCategory category) {
     return switch (category) {
-      CinearaSearchCategory.all => 'all',
+      CinearaSearchCategory.all => throw const SearchRepositoryException(
+        kind: SearchRepositoryErrorKind.invalidRequest,
+        message: 'All Search must be composed from focused Search categories.',
+      ),
       CinearaSearchCategory.movies => 'movies',
       CinearaSearchCategory.tvSeries => 'tv',
       CinearaSearchCategory.people => 'people',
       CinearaSearchCategory.collections => 'collections',
-
-      // "Studios" is presentation language. The TMDB/backend resource is a
-      // production company.
-      CinearaSearchCategory.studios => 'companies',
-
-      CinearaSearchCategory.keywords => 'keywords',
+      CinearaSearchCategory.studios => 'studios',
+      CinearaSearchCategory.keywords => 'topics',
     };
   }
 
@@ -802,26 +828,14 @@ final class SearchRepository {
       'displayType',
       'classification_label',
       'classificationLabel',
-      'special_classification',
-      'specialClassification',
     ]);
 
     if (backendValue != null) {
       return backendValue;
     }
 
-    final SearchMediaDescriptorResolver? resolver = mediaDescriptorResolver;
-
-    if (resolver != null) {
-      final String resolved = resolver(kind, json).trim();
-
-      if (resolved.isNotEmpty) {
-        return resolved;
-      }
-    }
-
-    // Machine fallback only. It deliberately avoids embedding an English
-    // presentation label inside the data layer.
+    // Machine-token fallback only. `search_page.dart` localizes these values
+    // before rendering, so the repository remains language agnostic.
     return switch (kind) {
       CinearaSearchMediaKind.movie => 'movie',
       CinearaSearchMediaKind.tvSeries => 'tv',
