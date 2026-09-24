@@ -1,3 +1,4 @@
+export 'src/branding/cineara_brand_mark.dart';
 export 'src/components/badges/external_rating_badge.dart';
 export 'src/components/badges/status_badge.dart';
 export 'src/components/buttons/filled_button.dart';
@@ -27,6 +28,10 @@ export 'src/components/people/person_grid_item.dart';
 export 'src/components/people/person_list_item.dart';
 export 'src/components/surfaces/surface.dart';
 export 'src/foundations/themes/app_theme.dart';
+export 'src/foundations/tokens/breakpoints.dart';
 export 'src/foundations/tokens/content_widths.dart';
 export 'src/foundations/tokens/geometry.dart';
+export 'src/foundations/tokens/motion.dart';
 export 'src/foundations/tokens/spacing.dart';
+export 'src/motion/bubble_transition.dart';
+export 'src/motion/shared_switcher.dart';

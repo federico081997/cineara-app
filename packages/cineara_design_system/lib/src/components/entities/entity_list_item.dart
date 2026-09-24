@@ -57,7 +57,8 @@ import 'entity_grid_item.dart';
 ///
 /// ```text
 /// collection poster -> 84 x 126
-/// studio logo       -> 84 x 56 inside the same 84 dp leading rail
+/// studio logo       -> 84 x 56 inside the same 84 dp leading rail;
+///                      missing/failed artwork uses the shared company fallback
 /// semantic icon     -> 56 x 56 when a caller genuinely has one
 /// topic / keyword   -> no visual
 /// ```
@@ -73,13 +74,15 @@ import 'entity_grid_item.dart';
 /// - visual entities (Collection, Studio, genuine icon entities) place Favorite
 ///   on the visual at logical bottom-end, using the same artwork dock language
 ///   as media posters;
-/// - text-only entities such as Topics keep Favorite in a compact trailing slot
-///   before the navigation chevron because there is no artwork to host it.
+/// - text-only entities such as Topics keep Favorite inline beside the title,
+///   because there is no artwork to host it.
 ///
-/// Favorite therefore never changes the metadata stack. The title stays vertically
-/// centered against the visual's normal envelope at ordinary text sizes, removing
-/// the previous title/state reflow. Larger accessibility text may still grow the
-/// row naturally, matching the media List accessibility contract.
+/// Favorite never changes the vertical metadata stack. The title stays vertically
+/// centered against the visual's normal envelope at ordinary text sizes. The item
+/// deliberately owns neither a tablet/desktop width cap nor row separators: width,
+/// alignment and the single separator between siblings belong to the parent List.
+/// Larger accessibility text may still grow the row naturally, matching the media
+/// List accessibility contract.
 final class CinearaEntityListItem extends StatefulWidget {
   const CinearaEntityListItem({
     required this.title,
@@ -138,7 +141,7 @@ final class CinearaEntityListItem extends StatefulWidget {
   ///
   /// Studio/icon rows now collapse to their real 56 dp visual height because
   /// Favorite no longer needs a second metadata line. Text-only Topic rows use
-  /// the same 56 dp baseline so their title, optional trailing Favorite and
+  /// the same 56 dp baseline so their title, optional inline Favorite and
   /// chevron share one compact centered axis. Larger accessibility text may grow
   /// the row naturally beyond these baselines.
   static const double collectionContentMinimumHeight = 126;
@@ -965,7 +968,7 @@ final class _CinearaEntityListItemState extends State<CinearaEntityListItem>
       null => AlignmentDirectional.centerStart,
     };
 
-    return Semantics(
+    final Widget row = Semantics(
       button: _interactive,
       label: _resolvedSemanticLabel,
       hint: widget.semanticHint,
@@ -1031,7 +1034,11 @@ final class _CinearaEntityListItemState extends State<CinearaEntityListItem>
                                       title: widget.title,
                                       variant: variant,
                                       image: widget.image,
-                                      fallbackIcon: widget.fallbackIcon,
+                                      fallbackIcon:
+                                          variant ==
+                                              CinearaEntityVisualVariant.logo
+                                          ? null
+                                          : widget.fallbackIcon,
                                       artworkZoom: _resolveArtworkZoom(
                                         pressProgress,
                                       ),
@@ -1059,26 +1066,17 @@ final class _CinearaEntityListItemState extends State<CinearaEntityListItem>
                               child: _EntityListMetadata(
                                 title: widget.title,
                                 minimumHeight: minimumContentHeight,
+                                favoriteDock:
+                                    variant == null && widget.showFavorite
+                                    ? _buildTopicFavoriteDock()
+                                    : null,
+                                favoriteVisible:
+                                    variant == null &&
+                                    widget.showFavorite &&
+                                    widget.favorite,
+                                reducedMotion: _reducedMotion,
                               ),
                             ),
-
-                            // A Topic has no artwork that can host Favorite.
-                            // Keep a stable passive trailing slot instead. The
-                            // fixed slot prevents the title width from jumping
-                            // when Favorite is toggled through Quick Actions.
-                            if (variant == null &&
-                                widget.showFavorite) ...<Widget>[
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 42,
-                                height: minimumContentHeight,
-                                child: Center(
-                                  child: IgnorePointer(
-                                    child: _buildTopicFavoriteDock(),
-                                  ),
-                                ),
-                              ),
-                            ],
                             if (widget.showChevron &&
                                 widget.onTap != null) ...<Widget>[
                               const SizedBox(
@@ -1128,6 +1126,12 @@ final class _CinearaEntityListItemState extends State<CinearaEntityListItem>
         ),
       ),
     );
+
+    // Width, horizontal placement and sibling separation are parent-owned. The
+    // item fills the content width supplied by the List but never paints its own
+    // divider, preventing doubled separator lines when ListView.separated or an
+    // equivalent parent already provides the section rhythm.
+    return SizedBox(width: double.infinity, child: row);
   }
 
   CinearaStatusDock _buildArtworkFavoriteDock() {
@@ -1161,7 +1165,7 @@ final class _CinearaEntityListItemState extends State<CinearaEntityListItem>
       layout: CinearaStatusDockLayout.horizontal,
       variant: CinearaStatusDockVariant.surface,
       density: CinearaStatusDockDensity.compact,
-      side: CinearaStatusDockSide.end,
+      side: CinearaStatusDockSide.start,
       tapToExpand: false,
       autoCollapse: false,
       excludeFromSemantics: true,
@@ -1265,24 +1269,41 @@ final class _EntityListInteractiveVisual extends StatelessWidget {
 }
 
 // =============================================================================
-// Metadata — always centered on the normal visual envelope
+// Metadata — centered title, with inline Favorite for text-only entities
 // =============================================================================
 
-/// Title-only metadata for entity List rows.
+/// Metadata for entity List rows.
 ///
-/// Favorite is intentionally absent from this widget. Visual entities keep
-/// Favorite on their artwork, while text-only entities keep it in the trailing
-/// rail. As a result the title never shifts when Favorite changes.
+/// Visual entities keep Favorite on their artwork, so this widget normally renders
+/// only the title. Text-only entities may supply [favoriteDock]; when active it is
+/// kept immediately beside the title instead of being pushed into the trailing
+/// navigation rail.
 ///
-/// At ordinary text sizes the title is vertically centered against
-/// [minimumHeight], which is the exact Collection poster height or the exact
-/// compact Studio/Topic baseline. Accessibility text may grow the row beyond the
-/// baseline instead of clipping.
+/// At ordinary text sizes the title cluster is vertically centered against
+/// [minimumHeight]. Accessibility text may grow the row beyond the baseline rather
+/// than clipping. The inline Favorite remains attached to the text cluster.
 final class _EntityListMetadata extends StatelessWidget {
-  const _EntityListMetadata({required this.title, required this.minimumHeight});
+  const _EntityListMetadata({
+    required this.title,
+    required this.minimumHeight,
+    required this.favoriteDock,
+    required this.favoriteVisible,
+    required this.reducedMotion,
+  });
+
+  static const double _titleToFavoriteGap = 8;
+  static const double _favoriteSlotWidth = 42;
+  static const double _favoriteSlotHeight = 42;
 
   final String title;
   final double minimumHeight;
+  final CinearaStatusDock? favoriteDock;
+  final bool favoriteVisible;
+  final bool reducedMotion;
+
+  Duration get _favoriteLayoutDuration {
+    return reducedMotion ? Duration.zero : const Duration(milliseconds: 220);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1307,25 +1328,72 @@ final class _EntityListMetadata extends StatelessWidget {
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
 
+        final CinearaStatusDock? resolvedFavoriteDock = favoriteDock;
+        final bool hasFavoriteDock = resolvedFavoriteDock != null;
+        final double favoriteReserve = hasFavoriteDock && favoriteVisible
+            ? _titleToFavoriteGap + _favoriteSlotWidth
+            : 0;
+
+        final double titleMaxWidth = math.max(
+          0.0,
+          availableWidth - favoriteReserve,
+        );
+
         final TextPainter painter = TextPainter(
           text: TextSpan(text: title, style: titleStyle),
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
           maxLines: 3,
           ellipsis: '…',
-        )..layout(maxWidth: math.max(0.0, availableWidth));
+        )..layout(maxWidth: titleMaxWidth);
 
-        final double contentHeight = math.max(minimumHeight, painter.height);
+        final double clusterHeight = math.max(
+          painter.height,
+          favoriteVisible ? _favoriteSlotHeight : 0,
+        );
+
+        final double contentHeight = math.max(minimumHeight, clusterHeight);
 
         return SizedBox(
           height: contentHeight,
           child: Align(
             alignment: AlignmentDirectional.centerStart,
-            child: Text(
-              title,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: titleStyle,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Flexible(
+                  fit: FlexFit.loose,
+                  child: Text(
+                    title,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: titleStyle,
+                  ),
+                ),
+                if (resolvedFavoriteDock != null) ...<Widget>[
+                  AnimatedContainer(
+                    duration: _favoriteLayoutDuration,
+                    curve: Curves.easeInOutCubic,
+                    width: favoriteVisible ? _titleToFavoriteGap : 0,
+                  ),
+                  AnimatedSize(
+                    duration: _favoriteLayoutDuration,
+                    curve: Curves.easeInOutCubic,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Offstage(
+                      offstage: !favoriteVisible,
+                      child: SizedBox(
+                        width: _favoriteSlotWidth,
+                        height: _favoriteSlotHeight,
+                        child: Center(
+                          child: IgnorePointer(child: resolvedFavoriteDock),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         );

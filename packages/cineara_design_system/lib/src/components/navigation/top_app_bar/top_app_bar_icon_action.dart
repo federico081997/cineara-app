@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../../foundations/tokens/accessibility.dart';
+import '../../../foundations/tokens/motion.dart';
 import 'top_app_bar_metrics.dart';
 import 'top_app_bar_style.dart';
 
 /// Standard icon action used in Cineara's top application bar.
 ///
-/// Suitable for global actions such as search, cast, help, sync, or other
-/// simple icon-based controls.
-///
-/// Use a specialized component when an action requires additional
-/// presentation, such as a notification badge or profile avatar.
-final class CinearaTopAppBarIconAction extends StatelessWidget {
+/// Pointer feedback appears immediately through the shared icon-button style.
+/// After activation the highlight is held for one short press interval before
+/// the callback runs, giving route and surface transitions a stable visual
+/// starting point.
+final class CinearaTopAppBarIconAction extends StatefulWidget {
   const CinearaTopAppBarIconAction({
     required this.icon,
     required this.semanticLabel,
@@ -20,31 +21,66 @@ final class CinearaTopAppBarIconAction extends StatelessWidget {
     super.key,
   });
 
-  /// Default action icon.
   final IconData icon;
-
-  /// Optional icon displayed when [isSelected] is true.
   final IconData? selectedIcon;
-
-  /// Localized tooltip and accessibility label.
   final String semanticLabel;
-
-  /// Whether the action is currently selected.
   final bool isSelected;
-
-  /// Called when the action is activated.
-  ///
-  /// When null, the action is disabled.
   final VoidCallback? onPressed;
 
   @override
+  State<CinearaTopAppBarIconAction> createState() =>
+      _CinearaTopAppBarIconActionState();
+}
+
+final class _CinearaTopAppBarIconActionState
+    extends State<CinearaTopAppBarIconAction> {
+  bool _activating = false;
+
+  Future<void> _activate() async {
+    final VoidCallback? callback = widget.onPressed;
+
+    if (callback == null || _activating) {
+      return;
+    }
+
+    setState(() {
+      _activating = true;
+    });
+
+    final Duration feedbackDuration = CinearaAccessibility.adaptiveDuration(
+      context,
+      CinearaMotion.press,
+    );
+
+    if (feedbackDuration != Duration.zero) {
+      await Future<void>.delayed(feedbackDuration);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    callback();
+
+    if (mounted) {
+      setState(() {
+        _activating = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final bool selected = widget.isSelected || _activating;
+
     return IconButton(
-      tooltip: semanticLabel,
-      onPressed: onPressed,
+      tooltip: widget.semanticLabel,
+      onPressed: widget.onPressed == null ? null : _activate,
       iconSize: CinearaTopAppBarMetrics.actionIconSizeFor(context),
-      style: CinearaTopAppBarStyle.iconAction(context, selected: isSelected),
-      icon: Icon(isSelected ? selectedIcon ?? icon : icon),
+      style: CinearaTopAppBarStyle.iconAction(context, selected: selected),
+      isSelected: selected,
+      selectedIcon: Icon(widget.selectedIcon ?? widget.icon),
+      icon: Icon(widget.icon),
     );
   }
 }

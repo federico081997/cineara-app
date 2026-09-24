@@ -13,8 +13,8 @@ import '../../foundations/tokens/geometry.dart';
 ///
 /// - Cineara's canonical poster geometry;
 /// - asynchronous image loading;
-/// - loading / empty state;
-/// - image failure state;
+/// - quiet asynchronous loading state;
+/// - unified missing / failed artwork fallback;
 /// - artwork clipping through [CinearaShapes.poster];
 /// - optional artwork-only Hero transition;
 /// - optional decorative artwork overlay;
@@ -144,20 +144,24 @@ final class CinearaPosterImage extends StatelessWidget {
 
   /// Poster image to display.
   ///
-  /// When null, [placeholderBuilder] is displayed instead.
+  /// When null, Cineara's missing-artwork fallback is displayed.
   final ImageProvider<Object>? image;
 
-  /// Optional custom placeholder shown when:
+  /// Optional custom loading placeholder shown only while a non-null
+  /// asynchronous [image] is waiting for its first decoded frame.
   ///
-  /// - [image] is null; or
-  /// - an asynchronous image is waiting for its first decoded frame.
+  /// A null image is not a loading condition; it uses the same missing-artwork
+  /// fallback as a failed image.
   ///
-  /// When omitted, Cineara's neutral poster placeholder is used.
+  /// When omitted, Cineara uses a quiet neutral loading surface with no prominent
+  /// icon so a loading grid does not become visually noisy.
   final WidgetBuilder? placeholderBuilder;
 
-  /// Optional custom artwork failure state.
+  /// Optional custom missing / failed artwork state.
   ///
-  /// When omitted, Cineara's standard poster failure treatment is used.
+  /// This builder is used both when [image] is null and when a non-null image
+  /// cannot be loaded or decoded. When omitted, both cases use Cineara's canonical
+  /// media fallback surface and icon.
   final WidgetBuilder? errorBuilder;
 
   // ===========================================================================
@@ -338,8 +342,10 @@ final class CinearaPosterImage extends StatelessWidget {
   Widget _buildArtworkContent(BuildContext context) {
     final ImageProvider<Object>? imageProvider = image;
 
+    // A null provider is a real missing-artwork state, not an asynchronous loading
+    // state. Keep it visually identical to an image that ultimately fails.
     if (imageProvider == null) {
-      return _buildPlaceholder(context);
+      return _buildMissingArtwork(context);
     }
 
     final bool reduceMotion = _reduceMotion(context);
@@ -347,11 +353,11 @@ final class CinearaPosterImage extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        // The placeholder remains beneath the image until the first decoded
-        // frame arrives.
-        //
-        // This guarantees stable geometry and prevents blank flashes.
-        _buildPlaceholder(context),
+        // Loading is intentionally quieter than missing artwork. This neutral
+        // surface remains underneath the image until the first decoded frame
+        // arrives, preventing blank flashes without presenting a false fallback
+        // icon while a valid poster is still resolving.
+        _buildLoadingPlaceholder(context),
 
         Image(
           image: imageProvider,
@@ -361,7 +367,7 @@ final class CinearaPosterImage extends StatelessWidget {
           gaplessPlayback: gaplessPlayback,
 
           // Artwork semantics are owned by the surrounding component-level
-          // Semantics node so placeholder/error/loading states are covered too.
+          // Semantics node so loading/missing/failure states are covered too.
           excludeFromSemantics: true,
 
           frameBuilder:
@@ -391,7 +397,7 @@ final class CinearaPosterImage extends StatelessWidget {
 
           errorBuilder:
               (BuildContext context, Object error, StackTrace? stackTrace) {
-                return _buildError(context);
+                return _buildMissingArtwork(context);
               },
         ),
       ],
@@ -442,27 +448,27 @@ final class CinearaPosterImage extends StatelessWidget {
   }
 
   // ===========================================================================
-  // Placeholder / failure
+  // Loading / missing artwork
   // ===========================================================================
 
-  Widget _buildPlaceholder(BuildContext context) {
+  Widget _buildLoadingPlaceholder(BuildContext context) {
     final WidgetBuilder? builder = placeholderBuilder;
 
     if (builder != null) {
       return builder(context);
     }
 
-    return const _DefaultPosterPlaceholder();
+    return const _DefaultPosterLoadingPlaceholder();
   }
 
-  Widget _buildError(BuildContext context) {
+  Widget _buildMissingArtwork(BuildContext context) {
     final WidgetBuilder? builder = errorBuilder;
 
     if (builder != null) {
       return builder(context);
     }
 
-    return const _DefaultPosterFailure();
+    return const _DefaultPosterFallback();
   }
 
   // ===========================================================================
@@ -481,43 +487,41 @@ final class CinearaPosterImage extends StatelessWidget {
 }
 
 // =============================================================================
-// Default placeholder
+// Default loading placeholder
 // =============================================================================
 
-/// Default Cineara poster placeholder.
+/// Quiet surface shown only while a non-null poster provider is resolving.
 ///
-/// It stays intentionally quiet because a page may display many poster
-/// placeholders simultaneously while artwork is being resolved.
-///
-/// Avoiding progress spinners here prevents a loading grid from turning into a
-/// collection of competing animated indicators.
-final class _DefaultPosterPlaceholder extends StatelessWidget {
-  const _DefaultPosterPlaceholder();
+/// Loading deliberately has no prominent icon. A page may contain many posters,
+/// and repeating symbols or spinners would make a loading grid visually noisy.
+final class _DefaultPosterLoadingPlaceholder extends StatelessWidget {
+  const _DefaultPosterLoadingPlaceholder();
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return ColoredBox(
-      color: colors.surfaceContainerHighest,
-      child: Center(
-        child: Icon(
-          Icons.image_outlined,
-          size: 30,
-          color: colors.onSurfaceVariant.withValues(alpha: 0.46),
-        ),
-      ),
-    );
+    return ColoredBox(color: colors.surfaceContainerHighest);
   }
 }
 
 // =============================================================================
-// Default failure
+// Default missing / failed artwork
 // =============================================================================
 
-/// Default state shown when poster artwork cannot be loaded or decoded.
-final class _DefaultPosterFailure extends StatelessWidget {
-  const _DefaultPosterFailure();
+/// Canonical Cineara media fallback used for both absent and failed artwork.
+///
+/// This intentionally matches the entity fallback language:
+///
+/// ```text
+/// neutral artwork surface + one primary-colored semantic icon
+/// ```
+///
+/// Using one fallback for both conditions avoids exposing transport/decoding
+/// details to the user when the end result is simply that no usable artwork is
+/// available.
+final class _DefaultPosterFallback extends StatelessWidget {
+  const _DefaultPosterFallback();
 
   @override
   Widget build(BuildContext context) {
@@ -527,9 +531,9 @@ final class _DefaultPosterFailure extends StatelessWidget {
       color: colors.surfaceContainerHighest,
       child: Center(
         child: Icon(
-          Icons.broken_image_outlined,
-          size: 30,
-          color: colors.onSurfaceVariant.withValues(alpha: 0.62),
+          Icons.movie_rounded,
+          size: 34,
+          color: colors.primary.withValues(alpha: 0.78),
         ),
       ),
     );

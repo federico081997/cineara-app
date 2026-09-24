@@ -9,12 +9,9 @@ import 'view_mode.dart';
 
 /// Compact selector for switching between Cineara's grid and list layouts.
 ///
-/// Selection is represented by a single animated capsule that stretches toward
-/// the newly selected destination, travels through the outer track, and then
-/// settles back to its resting size.
-///
-/// This gives the selector a subtle flowing motion while keeping it visually
-/// restrained enough for secondary page actions.
+/// A shared capsule flows between destinations and briefly expands while
+/// travelling. Icon emphasis follows the capsule position so the entire control
+/// reads as one continuous state transition.
 final class CinearaViewModeSelector extends StatefulWidget {
   const CinearaViewModeSelector({
     required this.value,
@@ -26,7 +23,6 @@ final class CinearaViewModeSelector extends StatefulWidget {
   });
 
   final CinearaViewMode value;
-
   final ValueChanged<CinearaViewMode> onChanged;
 
   final String gridLabel;
@@ -48,27 +44,29 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
 
   static const double _indicatorWidth = 35;
   static const double _indicatorHeight = 28;
-
-  /// Maximum additional width reached around the middle of the transition.
-  ///
-  /// Keeping this restrained avoids making the motion look elastic or playful.
   static const double _indicatorStretch = 13;
 
   static const double _iconSize = 18;
 
   late final AnimationController _controller;
 
-  late CinearaViewMode _fromMode;
-  late CinearaViewMode _toMode;
+  late double _fromSelection;
+  late double _toSelection;
 
   @override
   void initState() {
     super.initState();
 
-    _fromMode = widget.value;
-    _toMode = widget.value;
+    final double initialSelection = _selectionFor(widget.value);
 
-    _controller = AnimationController(vsync: this, value: 1);
+    _fromSelection = initialSelection;
+    _toSelection = initialSelection;
+
+    _controller = AnimationController(
+      vsync: this,
+      value: 1,
+      duration: CinearaMotion.selectionTransition,
+    );
   }
 
   @override
@@ -79,12 +77,12 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
       return;
     }
 
-    _fromMode = oldWidget.value;
-    _toMode = widget.value;
+    _fromSelection = _currentSelection();
+    _toSelection = _selectionFor(widget.value);
 
-    final duration = CinearaAccessibility.adaptiveDuration(
+    final Duration duration = CinearaAccessibility.adaptiveDuration(
       context,
-      CinearaMotion.slow,
+      CinearaMotion.selectionTransition,
     );
 
     if (duration == Duration.zero) {
@@ -100,20 +98,17 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
   @override
   void dispose() {
     _controller.dispose();
-
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final ColorScheme colors = Theme.of(context).colorScheme;
 
     return Semantics(
       container: true,
       enabled: widget.enabled,
       child: SizedBox(
-        // The visible selector remains compact while the surrounding region
-        // preserves a comfortable touch target.
         height: 48,
         child: Center(
           child: SizedBox(
@@ -121,16 +116,28 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
             height: _height,
             child: Material(
               color: colors.surfaceContainerHigh.withValues(
-                alpha: widget.enabled ? .68 : .42,
+                alpha: widget.enabled ? 0.68 : 0.42,
               ),
               shape: CinearaShapes.capsule(side: _outerBorder(context)),
               clipBehavior: Clip.antiAlias,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _buildAnimatedIndicator(context),
-                  _buildDestinations(context),
-                ],
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (BuildContext context, Widget? child) {
+                  final double rawProgress = _controller.value;
+                  final double selection = _currentSelection();
+
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      _buildIndicator(
+                        context,
+                        selection: selection,
+                        transitionProgress: rawProgress,
+                      ),
+                      _buildDestinations(context, selection: selection),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -139,58 +146,51 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
     );
   }
 
-  Widget _buildAnimatedIndicator(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+  Widget _buildIndicator(
+    BuildContext context, {
+    required double selection,
+    required double transitionProgress,
+  }) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final rawProgress = _controller.value;
+    final double stretchProgress = _stretchProgress(transitionProgress);
 
-        final positionProgress = CurvedAnimation(
-          parent: _controller,
-          curve: CinearaMotion.standardCurve,
-        ).value;
+    final double indicatorWidth =
+        _indicatorWidth + (_indicatorStretch * stretchProgress);
 
-        final stretchProgress = math.sin(math.pi * rawProgress);
+    final double availableWidth = _width - (_outerPadding * 2) - indicatorWidth;
 
-        final indicatorWidth =
-            _indicatorWidth + (_indicatorStretch * stretchProgress);
+    final double logicalPosition = availableWidth * selection;
 
-        final availableWidth = _width - (_outerPadding * 2) - indicatorWidth;
+    final double liftScale = _indicatorLiftScale(stretchProgress);
 
-        final fromPosition = _positionFor(_fromMode, availableWidth);
-
-        final toPosition = _positionFor(_toMode, availableWidth);
-
-        final left =
-            fromPosition + ((toPosition - fromPosition) * positionProgress);
-
-        return PositionedDirectional(
-          start: _outerPadding + left,
-          top: (_height - _indicatorHeight) / 2,
-          width: indicatorWidth,
-          height: _indicatorHeight,
-          child: DecoratedBox(
-            decoration: ShapeDecoration(
-              color: widget.enabled
-                  ? colors.primaryContainer
-                  : colors.surfaceContainerHighest,
-              shape: CinearaShapes.capsule(side: _indicatorBorder(context)),
-            ),
+    return PositionedDirectional(
+      start: _outerPadding + logicalPosition,
+      top: (_height - _indicatorHeight) / 2,
+      width: indicatorWidth,
+      height: _indicatorHeight,
+      child: Transform.scale(
+        scale: liftScale,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: widget.enabled
+                ? colors.primaryContainer
+                : colors.surfaceContainerHighest,
+            shape: CinearaShapes.capsule(side: _indicatorBorder(context)),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _buildDestinations(BuildContext context) {
+  Widget _buildDestinations(BuildContext context, {required double selection}) {
     return Row(
-      children: [
+      children: <Widget>[
         Expanded(
           child: _CinearaViewModeButton(
             mode: CinearaViewMode.grid,
             selected: widget.value == CinearaViewMode.grid,
+            selectionProgress: 1 - selection,
             enabled: widget.enabled,
             icon: Icons.grid_view_rounded,
             iconSize: _iconSize,
@@ -202,6 +202,7 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
           child: _CinearaViewModeButton(
             mode: CinearaViewMode.list,
             selected: widget.value == CinearaViewMode.list,
+            selectionProgress: selection,
             enabled: widget.enabled,
             icon: Icons.view_list_rounded,
             iconSize: _iconSize,
@@ -213,10 +214,36 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
     );
   }
 
-  double _positionFor(CinearaViewMode mode, double availableWidth) {
+  double _currentSelection() {
+    if (_controller.value >= 1) {
+      return _toSelection;
+    }
+
+    final double progress = CinearaMotion.bubbleCurve.transform(
+      _controller.value,
+    );
+
+    return _fromSelection + ((_toSelection - _fromSelection) * progress);
+  }
+
+  double _stretchProgress(double transitionProgress) {
+    if (_fromSelection == _toSelection) {
+      return 0;
+    }
+
+    return math.sin(math.pi * transitionProgress).clamp(0.0, 1.0);
+  }
+
+  double _indicatorLiftScale(double stretchProgress) {
+    final double lift = CinearaMotion.bubbleLiftScale - 1;
+
+    return 1 + (lift * stretchProgress);
+  }
+
+  double _selectionFor(CinearaViewMode mode) {
     return switch (mode) {
       CinearaViewMode.grid => 0,
-      CinearaViewMode.list => availableWidth,
+      CinearaViewMode.list => 1,
     };
   }
 
@@ -229,20 +256,20 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
   }
 
   BorderSide _outerBorder(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final highContrast = MediaQuery.highContrastOf(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool highContrast = MediaQuery.highContrastOf(context);
 
     return BorderSide(
       color: highContrast
           ? colors.outline
-          : colors.outlineVariant.withValues(alpha: .22),
-      width: highContrast ? 1.5 : .75,
+          : colors.outlineVariant.withValues(alpha: 0.22),
+      width: highContrast ? 1.5 : 0.75,
     );
   }
 
   BorderSide _indicatorBorder(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final highContrast = MediaQuery.highContrastOf(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool highContrast = MediaQuery.highContrastOf(context);
 
     if (!highContrast) {
       return BorderSide.none;
@@ -252,14 +279,15 @@ final class _CinearaViewModeSelectorState extends State<CinearaViewModeSelector>
   }
 }
 
-/// One interaction destination inside [CinearaViewModeSelector].
+/// Interaction destination inside [CinearaViewModeSelector].
 ///
-/// The moving selection surface is owned entirely by the parent. This widget
-/// handles only interaction, semantics, tooltip presentation, and icon state.
+/// Selection emphasis is derived from the position of the shared capsule so
+/// icon feedback remains synchronized with the surrounding surface motion.
 final class _CinearaViewModeButton extends StatelessWidget {
   const _CinearaViewModeButton({
     required this.mode,
     required this.selected,
+    required this.selectionProgress,
     required this.enabled,
     required this.icon,
     required this.iconSize,
@@ -270,6 +298,7 @@ final class _CinearaViewModeButton extends StatelessWidget {
   final CinearaViewMode mode;
 
   final bool selected;
+  final double selectionProgress;
   final bool enabled;
 
   final IconData icon;
@@ -281,13 +310,11 @@ final class _CinearaViewModeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final ColorScheme colors = Theme.of(context).colorScheme;
 
-    final foregroundColor = !enabled
-        ? colors.onSurface.withValues(alpha: .38)
-        : selected
-        ? colors.onPrimaryContainer
-        : colors.onSurfaceVariant.withValues(alpha: .78);
+    final double emphasis = selectionProgress.clamp(0.0, 1.0);
+
+    final Color foregroundColor = _foregroundColor(colors, emphasis: emphasis);
 
     return Tooltip(
       message: label,
@@ -297,32 +324,26 @@ final class _CinearaViewModeButton extends StatelessWidget {
         selected: selected,
         enabled: enabled,
         label: label,
-        onTap: enabled
-            ? () {
-                onPressed(mode);
-              }
-            : null,
+        onTap: enabled ? _handlePressed : null,
         child: ExcludeSemantics(
           child: InkWell(
-            onTap: enabled
-                ? () {
-                    onPressed(mode);
-                  }
-                : null,
+            onTap: enabled ? _handlePressed : null,
             customBorder: CinearaShapes.capsule(),
             splashFactory: NoSplash.splashFactory,
-            overlayColor: WidgetStateProperty.resolveWith((states) {
+            overlayColor: WidgetStateProperty.resolveWith<Color?>((
+              Set<WidgetState> states,
+            ) {
               if (!enabled) {
                 return Colors.transparent;
               }
 
               if (states.contains(WidgetState.pressed) ||
                   states.contains(WidgetState.focused)) {
-                return colors.onSurface.withValues(alpha: .055);
+                return colors.onSurface.withValues(alpha: 0.055);
               }
 
               if (states.contains(WidgetState.hovered)) {
-                return colors.onSurface.withValues(alpha: .03);
+                return colors.onSurface.withValues(alpha: 0.03);
               }
 
               return Colors.transparent;
@@ -334,5 +355,20 @@ final class _CinearaViewModeButton extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Color _foregroundColor(ColorScheme colors, {required double emphasis}) {
+    if (!enabled) {
+      return colors.onSurface.withValues(alpha: 0.38);
+    }
+
+    final Color inactive = colors.onSurfaceVariant.withValues(alpha: 0.78);
+    final Color active = colors.onPrimaryContainer;
+
+    return Color.lerp(inactive, active, emphasis)!;
+  }
+
+  void _handlePressed() {
+    onPressed(mode);
   }
 }

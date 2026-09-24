@@ -11,69 +11,32 @@ import 'navigation_pill_style.dart';
 
 /// Cineara's persistent floating bottom-navigation control.
 ///
-/// The navigation is visually icon-only. Localized destination labels remain
-/// available through accessibility semantics and tooltips.
-///
-/// Its geometry is composed from two closely related visual layers:
-///
-/// - a softly rounded outer navigation surface;
-/// - one inset capsule that moves continuously between destinations.
-///
-/// The active capsule uses a uniform inset from its destination cell so its
-/// distance from the surrounding navigation surface remains visually balanced
-/// horizontally and vertically.
-///
-/// The component owns presentation and interaction only. Navigation state,
-/// routing, branch restoration, and repeated-destination behaviour remain the
-/// responsibility of the application shell.
-///
-/// The navigation is designed to remain visible throughout normal application
-/// flows, including nested and cinematic pages. Page layouts should reserve
-/// their bottom content area using
-/// [CinearaNavigationPillMetrics.contentClearanceFor].
+/// A shared selection surface flows continuously between destinations. The outer
+/// surface and active indicator use the same navigation corner radius so the
+/// selected state does not become a more rounded capsule inside the bar.
 final class CinearaNavigationPill extends StatelessWidget {
   const CinearaNavigationPill({
     required this.destinations,
     required this.selectedIndex,
     required this.onDestinationSelected,
     super.key,
-  }) : assert(
-         destinations.length >= 2,
-         'At least two navigation destinations are required.',
-       ),
-       assert(
-         destinations.length <= 5,
-         'Use no more than five destinations in bottom navigation.',
-       ),
-       assert(
-         selectedIndex >= 0 && selectedIndex < destinations.length,
-         'selectedIndex must refer to an existing destination.',
-       );
+  }) : assert(destinations.length >= 2),
+       assert(destinations.length <= 5),
+       assert(selectedIndex >= 0 && selectedIndex < destinations.length);
 
-  /// Destinations displayed by the navigation control.
-  ///
-  /// Bottom navigation should contain between two and five root destinations.
   final List<CinearaNavigationDestination> destinations;
-
-  /// Index of the currently active root destination.
   final int selectedIndex;
-
-  /// Called when a destination is selected.
-  ///
-  /// Selecting the currently active destination is intentionally reported as
-  /// well. The application shell may use that event to return the branch to its
-  /// root or provide another conventional repeated-tab behaviour.
   final ValueChanged<int> onDestinationSelected;
 
   @override
   Widget build(BuildContext context) {
-    final movementDuration = CinearaAccessibility.adaptiveDuration(
+    final Duration movementDuration = CinearaAccessibility.adaptiveDuration(
       context,
-      CinearaMotion.slow,
+      CinearaMotion.selectionTransition,
     );
 
-    final maxWidth = CinearaNavigationPillMetrics.maxWidthFor(context);
-    final height = CinearaNavigationPillMetrics.heightFor(context);
+    final double maxWidth = CinearaNavigationPillMetrics.maxWidthFor(context);
+    final double height = CinearaNavigationPillMetrics.heightFor(context);
 
     return SafeArea(
       top: false,
@@ -95,13 +58,9 @@ final class CinearaNavigationPill extends StatelessWidget {
                 elevation: CinearaNavigationPillStyle.elevation,
                 shadowColor: CinearaNavigationPillStyle.shadowColor(context),
                 shape: CinearaNavigationPillStyle.shape(context),
-
-                // Interaction overlays and internal content remain clipped to
-                // the visible outer navigation shape.
                 clipBehavior: Clip.antiAlias,
-
                 child: LayoutBuilder(
-                  builder: (context, constraints) {
+                  builder: (BuildContext context, BoxConstraints constraints) {
                     return _NavigationPillLayout(
                       destinations: destinations,
                       selectedIndex: selectedIndex,
@@ -121,12 +80,7 @@ final class CinearaNavigationPill extends StatelessWidget {
   }
 }
 
-/// Internal layout of [CinearaNavigationPill].
-///
-/// The outer navigation surface is divided into equally sized destination
-/// cells. The active indicator fills its current destination cell while
-/// maintaining the same inset on every side.
-final class _NavigationPillLayout extends StatelessWidget {
+final class _NavigationPillLayout extends StatefulWidget {
   const _NavigationPillLayout({
     required this.destinations,
     required this.selectedIndex,
@@ -138,65 +92,102 @@ final class _NavigationPillLayout extends StatelessWidget {
 
   final List<CinearaNavigationDestination> destinations;
   final int selectedIndex;
-
   final ValueChanged<int> onDestinationSelected;
-
   final Duration movementDuration;
-
   final double availableWidth;
   final double availableHeight;
 
   @override
-  Widget build(BuildContext context) {
-    final itemWidth = availableWidth / destinations.length;
+  State<_NavigationPillLayout> createState() => _NavigationPillLayoutState();
+}
 
-    final indicatorInset = CinearaNavigationPillMetrics.indicatorInset;
+final class _NavigationPillLayoutState extends State<_NavigationPillLayout>
+    with SingleTickerProviderStateMixin {
+  static const double _maximumStretch = 14;
 
-    final indicatorWidth = math.max(0.0, itemWidth - (indicatorInset * 2));
+  late final AnimationController _controller;
+  late double _fromSelection;
+  late double _toSelection;
 
-    final indicatorHeight = math.max(
-      0.0,
-      availableHeight - (indicatorInset * 2),
-    );
+  @override
+  void initState() {
+    super.initState();
 
-    final indicatorStart = (itemWidth * selectedIndex) + indicatorInset;
+    final double selection = widget.selectedIndex.toDouble();
+    _fromSelection = selection;
+    _toSelection = selection;
 
-    final indicatorTop = indicatorInset;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildSelectionIndicator(
-          context,
-          start: indicatorStart,
-          top: indicatorTop,
-          width: indicatorWidth,
-          height: indicatorHeight,
-        ),
-        _buildDestinations(),
-      ],
+    _controller = AnimationController(
+      vsync: this,
+      value: 1,
+      duration: widget.movementDuration,
     );
   }
 
-  Widget _buildSelectionIndicator(
-    BuildContext context, {
-    required double start,
-    required double top,
-    required double width,
-    required double height,
-  }) {
-    return AnimatedPositionedDirectional(
-      duration: movementDuration,
-      curve: CinearaMotion.standardCurve,
+  @override
+  void didUpdateWidget(_NavigationPillLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.movementDuration != widget.movementDuration) {
+      _controller.duration = widget.movementDuration;
+    }
+
+    if (oldWidget.selectedIndex == widget.selectedIndex) {
+      return;
+    }
+
+    _fromSelection = _currentSelection();
+    _toSelection = widget.selectedIndex.toDouble();
+
+    if (widget.movementDuration == Duration.zero) {
+      _controller.value = 1;
+      return;
+    }
+
+    _controller
+      ..duration = widget.movementDuration
+      ..forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (BuildContext context, Widget? child) {
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[_buildIndicator(context), _buildDestinations()],
+        );
+      },
+    );
+  }
+
+  Widget _buildIndicator(BuildContext context) {
+    final double itemWidth = widget.availableWidth / widget.destinations.length;
+    final double inset = CinearaNavigationPillMetrics.indicatorInset;
+
+    final double restingWidth = math.max(0, itemWidth - (inset * 2));
+    final double height = math.max(0, widget.availableHeight - (inset * 2));
+
+    final double stretchProgress = _stretchProgress(_controller.value);
+    final double stretch = math.min(_maximumStretch, itemWidth * 0.18);
+    final double width = restingWidth + (stretch * stretchProgress);
+
+    final double centre = (itemWidth * _currentSelection()) + (itemWidth / 2);
+    final double start = centre - (width / 2);
+
+    return PositionedDirectional(
       start: start,
-      top: top,
+      top: inset,
       width: width,
       height: height,
-
-      // The moving capsule is decorative. Destination items own interaction
-      // and accessibility semantics.
       child: IgnorePointer(
-        ignoring: true,
         child: ExcludeSemantics(
           child: RepaintBoundary(
             child: DecoratedBox(
@@ -213,18 +204,38 @@ final class _NavigationPillLayout extends StatelessWidget {
   Widget _buildDestinations() {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var index = 0; index < destinations.length; index++)
+      children: <Widget>[
+        for (int index = 0; index < widget.destinations.length; index++)
           Expanded(
             child: CinearaNavigationPillItem(
-              destination: destinations[index],
-              selected: index == selectedIndex,
+              destination: widget.destinations[index],
+              selected: index == widget.selectedIndex,
               onPressed: () {
-                onDestinationSelected(index);
+                widget.onDestinationSelected(index);
               },
             ),
           ),
       ],
     );
+  }
+
+  double _currentSelection() {
+    if (_controller.value >= 1) {
+      return _toSelection;
+    }
+
+    final double progress = CinearaMotion.bubbleCurve.transform(
+      _controller.value,
+    );
+
+    return _fromSelection + ((_toSelection - _fromSelection) * progress);
+  }
+
+  double _stretchProgress(double progress) {
+    if (_fromSelection == _toSelection) {
+      return 0;
+    }
+
+    return math.sin(math.pi * progress).clamp(0.0, 1.0).toDouble();
   }
 }

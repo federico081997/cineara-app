@@ -47,25 +47,30 @@ extension CinearaEntityVisualVariantPresentation on CinearaEntityVisualVariant {
   BorderRadius get borderRadius =>
       const BorderRadius.all(Radius.circular(CinearaRadii.md));
 
-  /// Surface visible behind transparent or loading artwork.
-  Color backgroundColor(BuildContext context) {
+  /// Base frame surface.
+  ///
+  /// The base is deliberately neutral for every entity family. A successful
+  /// Studio/company logo paints its own light logo plate inside
+  /// [CinearaEntityArtwork]. Keeping the frame neutral means a missing, loading or
+  /// failed logo naturally falls back to the same Cineara artwork surface used by
+  /// posters instead of leaving a white plate behind.
+  ///
+  /// [hasArtwork] is retained for source compatibility with callers that already
+  /// pass it, but background selection no longer depends on that flag.
+  Color backgroundColor(BuildContext context, {bool hasArtwork = true}) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return colors.surfaceContainerHighest;
+  }
+
+  /// Light, theme-aware plate used only after a real Studio/company logo has
+  /// produced an image frame successfully.
+  Color logoPlateColor(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
 
-    return switch (this) {
-      CinearaEntityVisualVariant.poster => colors.surfaceContainerHighest,
-
-      // TMDB company/studio logos are commonly transparent PNGs. Browsers often
-      // display that transparency over white, while a dark app surface can make
-      // black logo artwork disappear. Use a deliberately light, theme-aware logo
-      // plate while preserving the original logo colors.
-      CinearaEntityVisualVariant.logo =>
-        theme.brightness == Brightness.dark
-            ? Color.lerp(colors.inverseSurface, colors.surface, 0.06)!
-            : Color.lerp(colors.surface, colors.surfaceContainerHighest, 0.30)!,
-
-      CinearaEntityVisualVariant.icon => colors.surfaceContainerHighest,
-    };
+    return theme.brightness == Brightness.dark
+        ? Color.lerp(colors.inverseSurface, colors.surface, 0.06)!
+        : Color.lerp(colors.surface, colors.surfaceContainerHighest, 0.30)!;
   }
 }
 
@@ -79,7 +84,8 @@ extension CinearaEntityVisualVariantPresentation on CinearaEntityVisualVariant {
 ///
 /// ```text
 /// poster -> BoxFit.cover
-/// logo   -> BoxFit.contain + internal breathing room
+/// logo   -> successful logo: full light plate + contained artwork;
+///           missing/loading/failed logo: full neutral fallback + one shared icon
 /// icon   -> centered symbolic fallback when no image exists
 /// ```
 ///
@@ -107,6 +113,14 @@ final class CinearaEntityArtwork extends StatelessWidget {
   Widget build(BuildContext context) {
     final ImageProvider<Object>? resolvedImage = image;
 
+    if (variant == CinearaEntityVisualVariant.logo) {
+      return _EntityStudioLogoArtwork(
+        title: title,
+        image: resolvedImage,
+        logoPadding: logoPadding,
+      );
+    }
+
     if (resolvedImage == null) {
       return _EntityArtworkFallback(
         title: title,
@@ -115,7 +129,7 @@ final class CinearaEntityArtwork extends StatelessWidget {
       );
     }
 
-    final Widget imageWidget = Image(
+    return Image(
       image: resolvedImage,
       fit: variant == CinearaEntityVisualVariant.poster
           ? BoxFit.cover
@@ -130,12 +144,78 @@ final class CinearaEntityArtwork extends StatelessWidget {
             );
           },
     );
+  }
+}
 
-    if (variant == CinearaEntityVisualVariant.logo) {
-      return Padding(padding: EdgeInsets.all(logoPadding), child: imageWidget);
+/// Studio/company artwork has a deliberately different success/fallback contract.
+///
+/// The neutral fallback always fills the complete frame. A real logo is placed on
+/// the light logo plate only after an image frame has been produced successfully.
+/// If the provider is absent, still loading, or ultimately fails, the full-frame
+/// fallback remains visible. This prevents an inset fallback rectangle inside a
+/// white/light Studio plate.
+final class _EntityStudioLogoArtwork extends StatelessWidget {
+  const _EntityStudioLogoArtwork({
+    required this.title,
+    required this.image,
+    required this.logoPadding,
+  });
+
+  final String title;
+  final ImageProvider<Object>? image;
+  final double logoPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget fallback = _EntityArtworkFallback(
+      title: title,
+      variant: CinearaEntityVisualVariant.logo,
+      fallbackIcon: null,
+    );
+
+    final ImageProvider<Object>? resolvedImage = image;
+
+    if (resolvedImage == null) {
+      return fallback;
     }
 
-    return imageWidget;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        fallback,
+        Image(
+          image: resolvedImage,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.medium,
+          frameBuilder:
+              (
+                BuildContext context,
+                Widget child,
+                int? frame,
+                bool wasSynchronouslyLoaded,
+              ) {
+                if (!wasSynchronouslyLoaded && frame == null) {
+                  return const SizedBox.shrink();
+                }
+
+                return ColoredBox(
+                  color: CinearaEntityVisualVariant.logo.logoPlateColor(
+                    context,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(logoPadding),
+                    child: child,
+                  ),
+                );
+              },
+          errorBuilder:
+              (BuildContext context, Object error, StackTrace? stackTrace) {
+                // Leave the full-size neutral fallback underneath visible.
+                return const SizedBox.shrink();
+              },
+        ),
+      ],
+    );
   }
 }
 
@@ -156,23 +236,13 @@ final class _EntityArtworkFallback extends StatelessWidget {
     final ColorScheme colors = theme.colorScheme;
 
     if (variant == CinearaEntityVisualVariant.logo) {
-      final Color foreground = theme.brightness == Brightness.dark
-          ? colors.onInverseSurface
-          : colors.onSurfaceVariant;
-
-      return Padding(
-        padding: const EdgeInsets.all(CinearaSpacing.sm),
+      return ColoredBox(
+        color: colors.surfaceContainerHighest,
         child: Center(
-          child: Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: foreground,
-              fontWeight: FontWeight.w800,
-              height: 1.12,
-            ),
+          child: Icon(
+            Icons.apartment_rounded,
+            size: 34,
+            color: colors.primary.withValues(alpha: 0.78),
           ),
         ),
       );
@@ -272,7 +342,7 @@ final class CinearaEntityVisual extends StatelessWidget {
         child: ClipRRect(
           borderRadius: borderRadius,
           child: ColoredBox(
-            color: variant.backgroundColor(context),
+            color: variant.backgroundColor(context, hasArtwork: image != null),
             child: ClipRect(
               child: Transform.scale(
                 scale: artworkZoom,
@@ -446,7 +516,10 @@ final class _CinearaEntityGridItemState extends State<CinearaEntityGridItem> {
                 ),
                 aspectRatio: widget.variant.aspectRatio,
                 borderRadius: widget.variant.borderRadius,
-                backgroundColor: widget.variant.backgroundColor(context),
+                backgroundColor: widget.variant.backgroundColor(
+                  context,
+                  hasArtwork: widget.image != null,
+                ),
                 semanticLabel: _resolvedSemanticLabel,
                 semanticHint: widget.semanticHint,
                 onTap: widget.onTap,

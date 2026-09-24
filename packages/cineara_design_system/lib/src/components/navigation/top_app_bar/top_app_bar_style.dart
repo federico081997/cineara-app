@@ -4,8 +4,8 @@ import 'top_app_bar_metrics.dart';
 
 /// Visual styling for Cineara's top-application-bar controls.
 ///
-/// Colors derive from the active [ColorScheme] so the component automatically
-/// follows light, dark, custom and high-contrast Cineara themes.
+/// Every icon action uses the same circular interaction surface so Search,
+/// Notifications, and other global actions share identical press feedback.
 abstract final class CinearaTopAppBarStyle {
   static const double _disabledForegroundOpacity = 0.38;
 
@@ -20,11 +20,15 @@ abstract final class CinearaTopAppBarStyle {
   static const double _profilePressedLightOpacity = 0.075;
   static const double _profilePressedDarkOpacity = 0.12;
 
-  /// Returns the shared style for standard top-bar icon actions.
+  /// Shared top-bar icon style.
+  ///
+  /// A selected action keeps the same surface that appears during press
+  /// feedback. This lets an activation transition begin from the exact visual
+  /// state the user just touched.
   static ButtonStyle iconAction(BuildContext context, {bool selected = false}) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final extent = CinearaTopAppBarMetrics.actionExtentFor(context);
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    final double extent = CinearaTopAppBarMetrics.actionExtentFor(context);
 
     return IconButton.styleFrom(
       minimumSize: Size.square(extent),
@@ -41,6 +45,9 @@ abstract final class CinearaTopAppBarStyle {
 
         return selected ? colors.primary : colors.onSurface;
       }),
+      backgroundColor: WidgetStatePropertyAll<Color>(
+        selected ? _actionHighlightColor(context) : Colors.transparent,
+      ),
       overlayColor: WidgetStateProperty.resolveWith<Color?>(
         (states) => _iconActionOverlay(context, states),
       ),
@@ -59,9 +66,9 @@ abstract final class CinearaTopAppBarStyle {
       return Colors.transparent;
     }
 
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final highContrast = MediaQuery.highContrastOf(context);
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    final bool highContrast = MediaQuery.highContrastOf(context);
 
     if (pressed) {
       return colors.onSurface.withValues(
@@ -88,6 +95,17 @@ abstract final class CinearaTopAppBarStyle {
     return Colors.transparent;
   }
 
+  static Color _actionHighlightColor(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool highContrast = MediaQuery.highContrastOf(context);
+
+    return colors.primary.withValues(
+      alpha: highContrast
+          ? _pressedHighContrastOverlayOpacity
+          : _pressedOverlayOpacity,
+    );
+  }
+
   static Color? _iconActionOverlay(
     BuildContext context,
     Set<WidgetState> states,
@@ -96,8 +114,8 @@ abstract final class CinearaTopAppBarStyle {
       return null;
     }
 
-    final colors = Theme.of(context).colorScheme;
-    final highContrast = MediaQuery.highContrastOf(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool highContrast = MediaQuery.highContrastOf(context);
 
     if (states.contains(WidgetState.pressed)) {
       return colors.primary.withValues(
