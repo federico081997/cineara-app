@@ -43,5 +43,235 @@
   "topBarOpenProfileMenu": "Apri il menu del profilo",
   "@topBarOpenProfileMenu": {
     "description": "Etichetta di accessibilità e suggerimento per il menu delle azioni rapide del profilo nella barra superiore dell'app."
+  },
+  "searchPageTitle": "Cerca",
+  "@searchPageTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchFieldLabel": "Cerca su Cineara",
+  "@searchFieldLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchHint": "Cerca su Cineara",
+  "@searchHint": {
+    "description": "Search feature localized string."
+  },
+  "searchClearSearch": "Cancella la ricerca",
+  "@searchClearSearch": {
+    "description": "Search feature localized string."
+  },
+  "searchRetry": "Riprova",
+  "@searchRetry": {
+    "description": "Search feature localized string."
+  },
+  "searchSeeAll": "Vedi tutto",
+  "@searchSeeAll": {
+    "description": "Search feature localized string."
+  },
+  "searchRecentSearches": "Ricerche recenti",
+  "@searchRecentSearches": {
+    "description": "Search feature localized string."
+  },
+  "searchRecommended": "Consigliati",
+  "@searchRecommended": {
+    "description": "Search feature localized string."
+  },
+  "searchClearRecent": "Cancella",
+  "@searchClearRecent": {
+    "description": "Search feature localized string."
+  },
+  "searchRemoveRecentSearch": "Rimuovi ricerca recente",
+  "@searchRemoveRecentSearch": {
+    "description": "Search feature localized string."
+  },
+  "searchSearching": "Ricerca in corso…",
+  "@searchSearching": {
+    "description": "Search feature localized string."
+  },
+  "searchLoadingMore": "Caricamento di altri risultati…",
+  "@searchLoadingMore": {
+    "description": "Search feature localized string."
+  },
+  "searchLoadMore": "Carica altro",
+  "@searchLoadMore": {
+    "description": "Search feature localized string."
+  },
+  "searchTryAgain": "Riprova",
+  "@searchTryAgain": {
+    "description": "Search feature localized string."
+  },
+  "searchNoResultsTitle": "Nessun risultato",
+  "@searchNoResultsTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchNoResultsMessage": "Prova con un altro titolo, persona, collezione, studio o parola chiave.",
+  "@searchNoResultsMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchErrorTitle": "Ricerca non disponibile",
+  "@searchErrorTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchErrorMessage": "Si è verificato un problema durante la ricerca. Riprova.",
+  "@searchErrorMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchStartTitle": "Trova qualcosa da guardare",
+  "@searchStartTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchStartMessage": "Cerca tra film, serie TV, persone, collezioni, studi e parole chiave.",
+  "@searchStartMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchGrid": "Griglia",
+  "@searchGrid": {
+    "description": "Search feature localized string."
+  },
+  "searchList": "Elenco",
+  "@searchList": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryAll": "Tutto",
+  "@searchCategoryAll": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryMovies": "Film",
+  "@searchCategoryMovies": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryTvSeries": "Serie TV",
+  "@searchCategoryTvSeries": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryPeople": "Persone",
+  "@searchCategoryPeople": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryCollections": "Collezioni",
+  "@searchCategoryCollections": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryStudios": "Studi",
+  "@searchCategoryStudios": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryKeywords": "Parole chiave",
+  "@searchCategoryKeywords": {
+    "description": "Search feature localized string."
+  },
+  "searchMovieDescriptor": "Film",
+  "@searchMovieDescriptor": {
+    "description": "Search feature localized string."
+  },
+  "searchTvSeriesDescriptor": "Serie TV",
+  "@searchTvSeriesDescriptor": {
+    "description": "Search feature localized string."
+  },
+  "searchViewingProgress": "Avanzamento visione",
+  "@searchViewingProgress": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenMedia": "Apri i dettagli del titolo",
+  "@searchOpenMedia": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenPerson": "Apri i dettagli della persona",
+  "@searchOpenPerson": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenCollection": "Apri i dettagli della collezione",
+  "@searchOpenCollection": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenStudio": "Apri i dettagli dello studio",
+  "@searchOpenStudio": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenKeyword": "Cerca questa parola chiave",
+  "@searchOpenKeyword": {
+    "description": "Search feature localized string."
+  },
+  "searchFocusShortcut": "Attiva il campo di ricerca",
+  "@searchFocusShortcut": {
+    "description": "Search feature localized string."
+  },
+  "searchControlShortcutLabel": "Ctrl K",
+  "@searchControlShortcutLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchMetaShortcutLabel": "⌘K",
+  "@searchMetaShortcutLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoriesLabel": "Categorie di ricerca",
+  "@searchCategoriesLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchResultCount": "{count, plural, =0{Nessun risultato} =1{1 risultato} other{{count} risultati}}",
+  "@searchResultCount": {
+    "description": "Search feature localized string.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchRatingOutOfTen": "{rating} su 10",
+  "@searchRatingOutOfTen": {
+    "description": "Search feature localized string.",
+    "placeholders": {
+      "rating": {
+        "type": "String"
+      }
+    }
+  },
+  "searchStatusDock": "Stato personale del titolo",
+  "@searchStatusDock": {
+    "description": "Search feature localized string."
+  },
+  "searchFavorite": "Preferito",
+  "@searchFavorite": {
+    "description": "Search feature localized string."
+  },
+  "searchInCollection": "Nella collezione",
+  "@searchInCollection": {
+    "description": "Search feature localized string."
+  },
+  "searchInWatchlist": "Nella lista da guardare",
+  "@searchInWatchlist": {
+    "description": "Search feature localized string."
+  },
+  "searchPersonalRating": "Valutazione personale",
+  "@searchPersonalRating": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusWatching": "In visione",
+  "@searchStatusWatching": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusCaughtUp": "In pari",
+  "@searchStatusCaughtUp": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusCompleted": "Completato",
+  "@searchStatusCompleted": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusRewatching": "In revisione",
+  "@searchStatusRewatching": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusOnHold": "In pausa",
+  "@searchStatusOnHold": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusDropped": "Abbandonato",
+  "@searchStatusDropped": {
+    "description": "Search feature localized string."
+  },
+  "searchDetailsUnavailable": "La pagina dei dettagli per questo tipo non è ancora disponibile.",
+  "@searchDetailsUnavailable": {
+    "description": "Search feature localized string."
   }
 }

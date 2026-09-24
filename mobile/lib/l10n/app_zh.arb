@@ -43,5 +43,235 @@
   "topBarOpenProfileMenu": "打开个人资料菜单",
   "@topBarOpenProfileMenu": {
     "description": "顶部应用栏中个人资料快捷操作菜单的无障碍标签和提示文本。"
+  },
+  "searchPageTitle": "搜索",
+  "@searchPageTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchFieldLabel": "搜索 Cineara",
+  "@searchFieldLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchHint": "搜索 Cineara",
+  "@searchHint": {
+    "description": "Search feature localized string."
+  },
+  "searchClearSearch": "清除搜索",
+  "@searchClearSearch": {
+    "description": "Search feature localized string."
+  },
+  "searchRetry": "重试",
+  "@searchRetry": {
+    "description": "Search feature localized string."
+  },
+  "searchSeeAll": "查看全部",
+  "@searchSeeAll": {
+    "description": "Search feature localized string."
+  },
+  "searchRecentSearches": "最近搜索",
+  "@searchRecentSearches": {
+    "description": "Search feature localized string."
+  },
+  "searchRecommended": "推荐",
+  "@searchRecommended": {
+    "description": "Search feature localized string."
+  },
+  "searchClearRecent": "清除",
+  "@searchClearRecent": {
+    "description": "Search feature localized string."
+  },
+  "searchRemoveRecentSearch": "移除最近搜索",
+  "@searchRemoveRecentSearch": {
+    "description": "Search feature localized string."
+  },
+  "searchSearching": "正在搜索…",
+  "@searchSearching": {
+    "description": "Search feature localized string."
+  },
+  "searchLoadingMore": "正在加载更多…",
+  "@searchLoadingMore": {
+    "description": "Search feature localized string."
+  },
+  "searchLoadMore": "加载更多",
+  "@searchLoadMore": {
+    "description": "Search feature localized string."
+  },
+  "searchTryAgain": "再试一次",
+  "@searchTryAgain": {
+    "description": "Search feature localized string."
+  },
+  "searchNoResultsTitle": "没有结果",
+  "@searchNoResultsTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchNoResultsMessage": "请尝试其他标题、人物、系列、工作室或关键词。",
+  "@searchNoResultsMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchErrorTitle": "搜索暂不可用",
+  "@searchErrorTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchErrorMessage": "搜索时出现问题，请重试。",
+  "@searchErrorMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchStartTitle": "找点想看的内容",
+  "@searchStartTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchStartMessage": "搜索电影、剧集、人物、系列、工作室和关键词。",
+  "@searchStartMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchGrid": "网格",
+  "@searchGrid": {
+    "description": "Search feature localized string."
+  },
+  "searchList": "列表",
+  "@searchList": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryAll": "全部",
+  "@searchCategoryAll": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryMovies": "电影",
+  "@searchCategoryMovies": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryTvSeries": "剧集",
+  "@searchCategoryTvSeries": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryPeople": "人物",
+  "@searchCategoryPeople": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryCollections": "系列",
+  "@searchCategoryCollections": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryStudios": "工作室",
+  "@searchCategoryStudios": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryKeywords": "关键词",
+  "@searchCategoryKeywords": {
+    "description": "Search feature localized string."
+  },
+  "searchMovieDescriptor": "电影",
+  "@searchMovieDescriptor": {
+    "description": "Search feature localized string."
+  },
+  "searchTvSeriesDescriptor": "剧集",
+  "@searchTvSeriesDescriptor": {
+    "description": "Search feature localized string."
+  },
+  "searchViewingProgress": "观看进度",
+  "@searchViewingProgress": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenMedia": "打开影视详情",
+  "@searchOpenMedia": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenPerson": "打开人物详情",
+  "@searchOpenPerson": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenCollection": "打开系列详情",
+  "@searchOpenCollection": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenStudio": "打开工作室详情",
+  "@searchOpenStudio": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenKeyword": "搜索此关键词",
+  "@searchOpenKeyword": {
+    "description": "Search feature localized string."
+  },
+  "searchFocusShortcut": "聚焦搜索框",
+  "@searchFocusShortcut": {
+    "description": "Search feature localized string."
+  },
+  "searchControlShortcutLabel": "Ctrl K",
+  "@searchControlShortcutLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchMetaShortcutLabel": "⌘K",
+  "@searchMetaShortcutLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoriesLabel": "搜索类别",
+  "@searchCategoriesLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchResultCount": "{count, plural, other{{count} 个结果}}",
+  "@searchResultCount": {
+    "description": "Search feature localized string.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchRatingOutOfTen": "{rating} / 10",
+  "@searchRatingOutOfTen": {
+    "description": "Search feature localized string.",
+    "placeholders": {
+      "rating": {
+        "type": "String"
+      }
+    }
+  },
+  "searchStatusDock": "个人媒体状态",
+  "@searchStatusDock": {
+    "description": "Search feature localized string."
+  },
+  "searchFavorite": "收藏",
+  "@searchFavorite": {
+    "description": "Search feature localized string."
+  },
+  "searchInCollection": "已加入收藏集",
+  "@searchInCollection": {
+    "description": "Search feature localized string."
+  },
+  "searchInWatchlist": "已加入想看",
+  "@searchInWatchlist": {
+    "description": "Search feature localized string."
+  },
+  "searchPersonalRating": "我的评分",
+  "@searchPersonalRating": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusWatching": "正在观看",
+  "@searchStatusWatching": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusCaughtUp": "已追到最新",
+  "@searchStatusCaughtUp": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusCompleted": "已看完",
+  "@searchStatusCompleted": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusRewatching": "重看中",
+  "@searchStatusRewatching": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusOnHold": "暂停观看",
+  "@searchStatusOnHold": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusDropped": "已弃",
+  "@searchStatusDropped": {
+    "description": "Search feature localized string."
+  },
+  "searchDetailsUnavailable": "此类型的详情页暂不可用。",
+  "@searchDetailsUnavailable": {
+    "description": "Search feature localized string."
   }
 }

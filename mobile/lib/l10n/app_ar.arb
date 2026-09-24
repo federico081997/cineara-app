@@ -43,5 +43,235 @@
   "topBarOpenProfileMenu": "فتح قائمة الملف الشخصي",
   "@topBarOpenProfileMenu": {
     "description": "تسمية لإمكانية الوصول ونص تلميحي لقائمة الإجراءات السريعة الخاصة بالملف الشخصي في الشريط العلوي للتطبيق."
+  },
+  "searchPageTitle": "بحث",
+  "@searchPageTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchFieldLabel": "ابحث في Cineara",
+  "@searchFieldLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchHint": "ابحث في Cineara",
+  "@searchHint": {
+    "description": "Search feature localized string."
+  },
+  "searchClearSearch": "مسح البحث",
+  "@searchClearSearch": {
+    "description": "Search feature localized string."
+  },
+  "searchRetry": "إعادة المحاولة",
+  "@searchRetry": {
+    "description": "Search feature localized string."
+  },
+  "searchSeeAll": "عرض الكل",
+  "@searchSeeAll": {
+    "description": "Search feature localized string."
+  },
+  "searchRecentSearches": "عمليات البحث الأخيرة",
+  "@searchRecentSearches": {
+    "description": "Search feature localized string."
+  },
+  "searchRecommended": "مقترح",
+  "@searchRecommended": {
+    "description": "Search feature localized string."
+  },
+  "searchClearRecent": "مسح",
+  "@searchClearRecent": {
+    "description": "Search feature localized string."
+  },
+  "searchRemoveRecentSearch": "إزالة البحث الأخير",
+  "@searchRemoveRecentSearch": {
+    "description": "Search feature localized string."
+  },
+  "searchSearching": "جارٍ البحث…",
+  "@searchSearching": {
+    "description": "Search feature localized string."
+  },
+  "searchLoadingMore": "جارٍ تحميل المزيد…",
+  "@searchLoadingMore": {
+    "description": "Search feature localized string."
+  },
+  "searchLoadMore": "تحميل المزيد",
+  "@searchLoadMore": {
+    "description": "Search feature localized string."
+  },
+  "searchTryAgain": "حاول مرة أخرى",
+  "@searchTryAgain": {
+    "description": "Search feature localized string."
+  },
+  "searchNoResultsTitle": "لا توجد نتائج",
+  "@searchNoResultsTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchNoResultsMessage": "جرّب عنوانًا أو شخصًا أو مجموعة أو استوديو أو كلمة مفتاحية أخرى.",
+  "@searchNoResultsMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchErrorTitle": "البحث غير متاح",
+  "@searchErrorTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchErrorMessage": "حدث خطأ أثناء البحث. حاول مرة أخرى.",
+  "@searchErrorMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchStartTitle": "ابحث عما تريد مشاهدته",
+  "@searchStartTitle": {
+    "description": "Search feature localized string."
+  },
+  "searchStartMessage": "ابحث في الأفلام والمسلسلات التلفزيونية والأشخاص والمجموعات والاستوديوهات والكلمات المفتاحية.",
+  "@searchStartMessage": {
+    "description": "Search feature localized string."
+  },
+  "searchGrid": "شبكة",
+  "@searchGrid": {
+    "description": "Search feature localized string."
+  },
+  "searchList": "قائمة",
+  "@searchList": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryAll": "الكل",
+  "@searchCategoryAll": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryMovies": "أفلام",
+  "@searchCategoryMovies": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryTvSeries": "مسلسلات تلفزيونية",
+  "@searchCategoryTvSeries": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryPeople": "أشخاص",
+  "@searchCategoryPeople": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryCollections": "مجموعات",
+  "@searchCategoryCollections": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryStudios": "استوديوهات",
+  "@searchCategoryStudios": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoryKeywords": "كلمات مفتاحية",
+  "@searchCategoryKeywords": {
+    "description": "Search feature localized string."
+  },
+  "searchMovieDescriptor": "فيلم",
+  "@searchMovieDescriptor": {
+    "description": "Search feature localized string."
+  },
+  "searchTvSeriesDescriptor": "مسلسل تلفزيوني",
+  "@searchTvSeriesDescriptor": {
+    "description": "Search feature localized string."
+  },
+  "searchViewingProgress": "تقدم المشاهدة",
+  "@searchViewingProgress": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenMedia": "فتح تفاصيل العمل",
+  "@searchOpenMedia": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenPerson": "فتح تفاصيل الشخص",
+  "@searchOpenPerson": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenCollection": "فتح تفاصيل المجموعة",
+  "@searchOpenCollection": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenStudio": "فتح تفاصيل الاستوديو",
+  "@searchOpenStudio": {
+    "description": "Search feature localized string."
+  },
+  "searchOpenKeyword": "البحث بهذه الكلمة المفتاحية",
+  "@searchOpenKeyword": {
+    "description": "Search feature localized string."
+  },
+  "searchFocusShortcut": "الانتقال إلى حقل البحث",
+  "@searchFocusShortcut": {
+    "description": "Search feature localized string."
+  },
+  "searchControlShortcutLabel": "Ctrl K",
+  "@searchControlShortcutLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchMetaShortcutLabel": "⌘K",
+  "@searchMetaShortcutLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchCategoriesLabel": "فئات البحث",
+  "@searchCategoriesLabel": {
+    "description": "Search feature localized string."
+  },
+  "searchResultCount": "{count, plural, =0{لا توجد نتائج} =1{نتيجة واحدة} =2{نتيجتان} few{{count} نتائج} many{{count} نتيجة} other{{count} نتيجة}}",
+  "@searchResultCount": {
+    "description": "Search feature localized string.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchRatingOutOfTen": "{rating} من 10",
+  "@searchRatingOutOfTen": {
+    "description": "Search feature localized string.",
+    "placeholders": {
+      "rating": {
+        "type": "String"
+      }
+    }
+  },
+  "searchStatusDock": "حالة الوسائط الشخصية",
+  "@searchStatusDock": {
+    "description": "Search feature localized string."
+  },
+  "searchFavorite": "المفضلة",
+  "@searchFavorite": {
+    "description": "Search feature localized string."
+  },
+  "searchInCollection": "ضمن المجموعة",
+  "@searchInCollection": {
+    "description": "Search feature localized string."
+  },
+  "searchInWatchlist": "ضمن قائمة المشاهدة",
+  "@searchInWatchlist": {
+    "description": "Search feature localized string."
+  },
+  "searchPersonalRating": "تقييمي",
+  "@searchPersonalRating": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusWatching": "قيد المشاهدة",
+  "@searchStatusWatching": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusCaughtUp": "مواكب للحلقات",
+  "@searchStatusCaughtUp": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusCompleted": "مكتمل",
+  "@searchStatusCompleted": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusRewatching": "إعادة مشاهدة",
+  "@searchStatusRewatching": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusOnHold": "متوقف مؤقتًا",
+  "@searchStatusOnHold": {
+    "description": "Search feature localized string."
+  },
+  "searchStatusDropped": "تم التخلي عنه",
+  "@searchStatusDropped": {
+    "description": "Search feature localized string."
+  },
+  "searchDetailsUnavailable": "صفحة التفاصيل لهذا النوع غير متاحة بعد.",
+  "@searchDetailsUnavailable": {
+    "description": "Search feature localized string."
   }
 }
