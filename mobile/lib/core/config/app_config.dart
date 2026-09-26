@@ -4,6 +4,7 @@ enum AppEnvironment { development, staging, production }
 // Build variants of the application.
 enum AppFlavor { play, personal }
 
+/// Stores build-time and environment configuration for Cineara.
 final class AppConfig {
   /// Creates the Cineara application configuration.
   ///
@@ -18,6 +19,8 @@ final class AppConfig {
     required this.apiBaseUrl,
     required this.enableDebugLogging,
   });
+
+  // === Factory constructors ===
 
   // Creates the configuration from Flutter `--dart-define` values.
   factory AppConfig.fromEnvironment() {
@@ -57,18 +60,30 @@ final class AppConfig {
     );
   }
 
-  // Fields
+  // === Instance fields ===
 
   final AppEnvironment environment;
   final AppFlavor flavor;
   final Uri apiBaseUrl;
   final bool enableDebugLogging;
 
-  // Getters
+  // === Getters ===
 
   bool get supportsAdultContent => flavor == AppFlavor.personal;
 
-  // Private helpers
+  // === Overrides ===
+
+  @override
+  String toString() {
+    return 'AppConfig('
+        'environment: ${environment.name}, '
+        'flavor: ${flavor.name}, '
+        'apiBaseUrl: $apiBaseUrl, '
+        'enableDebugLogging: $enableDebugLogging'
+        ')';
+  }
+
+  // === Private helpers ===
 
   static AppEnvironment _parseEnvironment(String value) {
     return switch (value.trim().toLowerCase()) {
@@ -129,17 +144,5 @@ final class AppConfig {
     }
 
     return uri;
-  }
-
-  // Overrides
-
-  @override
-  String toString() {
-    return 'AppConfig('
-        'environment: ${environment.name}, '
-        'flavor: ${flavor.name}, '
-        'apiBaseUrl: $apiBaseUrl, '
-        'enableDebugLogging: $enableDebugLogging'
-        ')';
   }
 }

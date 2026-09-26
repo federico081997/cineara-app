@@ -2,104 +2,172 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:cineara_mobile/core/logging/app_logger.dart';
+import 'package:cineara_mobile/core/networking/api_exceptions.dart';
 
-/// Shared JSON HTTP client used by Cineara's mobile features.
-///
-/// The client owns transport-level concerns only:
-///
-/// - absolute/relative URI resolution;
-/// - default JSON headers;
-/// - request timeout handling;
-/// - HTTP status validation;
-/// - UTF-8 decoding;
-/// - JSON decoding;
-/// - lightweight debug logging.
-///
-/// Feature repositories remain responsible for validating and mapping their own
-/// response schemas.
 final class ApiClient {
+  /// Creates the Cineara API client.
+  ///
+  /// Parameters:
+  /// - [apiBaseUrl] — Base URL used for API requests.
+  /// - [logger] — Logger used for API debug messages.
+  /// - [requestTimeout] — Maximum connection timeout. Defaults to 15 seconds.
+  /// - [defaultHeaders] — Headers included with every request.
+  /// - [httpClient] — Optional HTTP client. A new [HttpClient] is created
+  /// if none is provided.
+
+  // === Constructors ===
+
   ApiClient({
-    required Uri baseUri,
+    required this.apiBaseUrl,
+    required AppLogger logger,
     this.requestTimeout = const Duration(seconds: 15),
-    this.enableDebugLogging = false,
     Map<String, String> defaultHeaders = const <String, String>{},
     HttpClient? httpClient,
-  }) : _baseUri = _validateBaseUri(baseUri),
+  }) : _logger = logger,
        _defaultHeaders = Map<String, String>.unmodifiable(defaultHeaders),
        _httpClient = httpClient ?? HttpClient() {
     _httpClient.connectionTimeout = requestTimeout;
   }
 
-  final Uri _baseUri;
-  final HttpClient _httpClient;
-  final Map<String, String> _defaultHeaders;
+  // === Instance fields ===
 
+  final Uri apiBaseUrl;
+  final AppLogger _logger;
   final Duration requestTimeout;
-  final bool enableDebugLogging;
+  final Map<String, String> _defaultHeaders;
+  final HttpClient _httpClient;
 
-  Uri get baseUri => _baseUri;
+  // === Public methods ===
 
+  /// Sends a GET request and returns the decoded JSON response.
+  ///
+  /// **Parameters:**
+  /// - [url] — URL of the requested resource.
+  /// - [headers] — Additional headers for this request.
+  ///
+  /// **Returns:**
+  /// The decoded JSON response.
   Future<Object?> getJson(
-    Uri uri, {
+    Uri url, {
     Map<String, String> headers = const <String, String>{},
   }) {
-    return _requestJson(method: 'GET', uri: uri, headers: headers);
+    return _requestJson(method: 'GET', url: url, headers: headers);
   }
 
+  /// Sends a POST request and returns the decoded JSON response.
+  ///
+  /// **Parameters:**
+  /// - [url] — URL of the requested resource.
+  /// - [headers] — Additional headers for this request.
+  /// - [body] — Optional request body to encode as JSON.
+  ///
+  /// **Returns:**
+  /// The decoded JSON response.
   Future<Object?> postJson(
-    Uri uri, {
-    Object? body,
+    Uri url, {
     Map<String, String> headers = const <String, String>{},
+    Object? body,
   }) {
-    return _requestJson(method: 'POST', uri: uri, headers: headers, body: body);
+    return _requestJson(method: 'POST', url: url, headers: headers, body: body);
   }
 
+  /// Sends a PUT request and returns the decoded JSON response.
+  ///
+  /// **Parameters:**
+  /// - [url] — URL of the requested resource.
+  /// - [headers] — Additional headers for this request.
+  /// - [body] — Optional request body to encode as JSON.
+  ///
+  /// **Returns:**
+  /// The decoded JSON response.
   Future<Object?> putJson(
-    Uri uri, {
-    Object? body,
+    Uri url, {
     Map<String, String> headers = const <String, String>{},
+    Object? body,
   }) {
-    return _requestJson(method: 'PUT', uri: uri, headers: headers, body: body);
+    return _requestJson(method: 'PUT', url: url, headers: headers, body: body);
   }
 
-  Future<Object?> deleteJson(
-    Uri uri, {
-    Object? body,
+  /// Sends a PATCH request and returns the decoded JSON response.
+  ///
+  /// **Parameters:**
+  /// - [url] — URL of the requested resource.
+  /// - [headers] — Additional headers for this request.
+  /// - [body] — Optional request body to encode as JSON.
+  ///
+  /// **Returns:**
+  /// The decoded JSON response.
+  Future<Object?> patchJson(
+    Uri url, {
     Map<String, String> headers = const <String, String>{},
+    Object? body,
   }) {
     return _requestJson(
-      method: 'DELETE',
-      uri: uri,
+      method: 'PATCH',
+      url: url,
       headers: headers,
       body: body,
     );
   }
 
+  /// Sends a DELETE request and returns the decoded JSON response.
+  ///
+  /// **Parameters:**
+  /// - [url] — URL of the requested resource.
+  /// - [headers] — Additional headers for this request.
+  /// - [body] — Optional request body to encode as JSON.
+  ///
+  /// **Returns:**
+  /// The decoded JSON response.
+  Future<Object?> deleteJson(
+    Uri url, {
+    Map<String, String> headers = const <String, String>{},
+    Object? body,
+  }) {
+    return _requestJson(
+      method: 'DELETE',
+      url: url,
+      headers: headers,
+      body: body,
+    );
+  }
+
+  /// Closes the underlying HTTP client.
+  ///
+  /// **Parameters:**
+  /// - [force] — Whether active connections should be closed immediately.
+  /// Defaults to false.
+  void close({bool force = false}) {
+    _httpClient.close(force: force);
+  }
+
+  // === Private helpers ===
+
   Future<Object?> _requestJson({
     required String method,
-    required Uri uri,
+    required Uri url,
     required Map<String, String> headers,
     Object? body,
   }) async {
-    final Uri resolvedUri = _resolve(uri);
+    final Uri resolvedUrl = apiBaseUrl.resolveUri(url);
     final Stopwatch stopwatch = Stopwatch()..start();
 
-    _log('$method $resolvedUri');
+    final mergedHeaders = <String, String>{
+      HttpHeaders.acceptHeader: 'application/json',
+      ..._defaultHeaders,
+      ...headers,
+    };
+
+    _logger.debug('$method $resolvedUrl', source: 'ApiClient');
 
     try {
       final HttpClientRequest request = await _httpClient
-          .openUrl(method, resolvedUri)
+          .openUrl(method, resolvedUrl)
           .timeout(requestTimeout);
 
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-
-      for (final MapEntry<String, String> header in _defaultHeaders.entries) {
-        request.headers.set(header.key, header.value);
-      }
-
-      for (final MapEntry<String, String> header in headers.entries) {
-        request.headers.set(header.key, header.value);
+      for (final entry in mergedHeaders.entries) {
+        request.headers.set(entry.key, entry.value);
       }
 
       if (body != null) {
@@ -107,89 +175,92 @@ final class ApiClient {
         request.add(utf8.encode(jsonEncode(body)));
       }
 
-      final HttpClientResponse response = await request.close().timeout(
+      final HttpClientResponse httpResponse = await request.close().timeout(
         requestTimeout,
       );
 
-      final List<int> bytes = await response
-          .fold<List<int>>(
-            <int>[],
-            (List<int> current, List<int> chunk) => current..addAll(chunk),
-          )
-          .timeout(requestTimeout);
-
-      late final String responseText;
+      final String responseBody;
 
       try {
-        responseText = utf8.decode(bytes, allowMalformed: false);
+        responseBody = await httpResponse
+            .transform(utf8.decoder)
+            .join()
+            .timeout(requestTimeout);
       } on FormatException catch (error) {
         throw ApiInvalidResponseException(
-          uri: resolvedUri,
+          url: resolvedUrl,
           message: 'The server returned invalid UTF-8.',
           cause: error,
         );
       }
 
-      final int statusCode = response.statusCode;
+      final int statusCode = httpResponse.statusCode;
 
       if (statusCode < 200 || statusCode >= 300) {
-        _log(
-          '$method $resolvedUri -> $statusCode '
+        final String? responseExcerpt = _getResponseExcerpt(responseBody);
+
+        _logger.debug(
+          '$method $resolvedUrl -> $statusCode '
           '(${stopwatch.elapsedMilliseconds} ms) '
-          '${_safeResponseExcerpt(responseText) ?? ''}',
+          '${responseExcerpt ?? ''}',
+          source: 'ApiClient',
         );
 
         throw ApiHttpException(
-          uri: resolvedUri,
+          url: resolvedUrl,
           statusCode: statusCode,
-          responseBody: _safeResponseExcerpt(responseText),
+          responseBody: responseExcerpt,
         );
       }
 
-      if (statusCode == HttpStatus.noContent || responseText.trim().isEmpty) {
-        _log(
-          '$method $resolvedUri -> $statusCode '
+      if (statusCode == HttpStatus.noContent || responseBody.trim().isEmpty) {
+        _logger.debug(
+          '$method $resolvedUrl -> $statusCode '
           '(${stopwatch.elapsedMilliseconds} ms)',
+          source: 'ApiClient',
         );
+
         return null;
       }
 
       try {
-        final Object? decoded = jsonDecode(responseText);
+        final Object? decodedJson = jsonDecode(responseBody);
 
-        _log(
-          '$method $resolvedUri -> $statusCode '
+        _logger.debug(
+          '$method $resolvedUrl -> $statusCode '
           '(${stopwatch.elapsedMilliseconds} ms)',
+          source: 'ApiClient',
         );
-        return decoded;
+
+        return decodedJson;
       } on FormatException catch (error) {
         throw ApiInvalidResponseException(
-          uri: resolvedUri,
+          url: resolvedUrl,
           message: 'The server returned invalid JSON.',
           cause: error,
         );
       }
     } on TimeoutException catch (error) {
       throw ApiTimeoutException(
-        uri: resolvedUri,
+        url: resolvedUrl,
         timeout: requestTimeout,
         cause: error,
       );
     } on SocketException catch (error) {
       throw ApiNetworkException(
-        uri: resolvedUri,
+        url: resolvedUrl,
         message: error.message,
         cause: error,
       );
     } on HandshakeException catch (error) {
       throw ApiNetworkException(
-        uri: resolvedUri,
+        url: resolvedUrl,
         message: 'Secure connection failed.',
         cause: error,
       );
     } on HttpException catch (error) {
       throw ApiNetworkException(
-        uri: resolvedUri,
+        url: resolvedUrl,
         message: error.message,
         cause: error,
       );
@@ -198,98 +269,17 @@ final class ApiClient {
     }
   }
 
-  Uri _resolve(Uri uri) {
-    if (uri.hasScheme) {
-      return uri;
-    }
+  String? _getResponseExcerpt(String responseBody, {int maxLength = 512}) {
+    final String trimmed = responseBody.trim();
 
-    return _baseUri.resolveUri(uri);
-  }
-
-  void close({bool force = false}) {
-    _httpClient.close(force: force);
-  }
-
-  void _log(String message) {
-    if (!enableDebugLogging || !kDebugMode) {
-      return;
-    }
-
-    debugPrint('[ApiClient] $message');
-  }
-
-  static String? _safeResponseExcerpt(String value) {
-    final String normalized = value.trim();
-
-    if (normalized.isEmpty) {
+    if (trimmed.isEmpty) {
       return null;
     }
 
-    const int maxLength = 512;
-
-    if (normalized.length <= maxLength) {
-      return normalized;
+    if (trimmed.length <= maxLength) {
+      trimmed;
     }
 
-    return '${normalized.substring(0, maxLength)}…';
+    return trimmed.substring(0, maxLength);
   }
-
-  static Uri _validateBaseUri(Uri value) {
-    if (!value.hasScheme ||
-        value.host.isEmpty ||
-        (value.scheme != 'http' && value.scheme != 'https')) {
-      throw ArgumentError.value(
-        value,
-        'baseUri',
-        'Expected an absolute HTTP or HTTPS URI.',
-      );
-    }
-
-    return value;
-  }
-}
-
-sealed class ApiException implements Exception {
-  ApiException({required this.uri, required this.message, this.cause});
-
-  final Uri uri;
-  final String message;
-  final Object? cause;
-
-  @override
-  String toString() => '$runtimeType: $message ($uri)';
-}
-
-final class ApiNetworkException extends ApiException {
-  ApiNetworkException({
-    required super.uri,
-    required super.message,
-    super.cause,
-  });
-}
-
-final class ApiTimeoutException extends ApiException {
-  ApiTimeoutException({required super.uri, required this.timeout, super.cause})
-    : super(message: 'Request timed out after $timeout.');
-
-  final Duration timeout;
-}
-
-final class ApiHttpException extends ApiException {
-  ApiHttpException({
-    required super.uri,
-    required this.statusCode,
-    this.responseBody,
-  }) : super(message: 'Server returned HTTP $statusCode.');
-
-  final int statusCode;
-  final String? responseBody;
-}
-
-final class ApiInvalidResponseException extends ApiException {
-  ApiInvalidResponseException({
-    required super.uri,
-    required super.message,
-    super.cause,
-  });
 }
